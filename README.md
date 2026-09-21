@@ -32,17 +32,22 @@ Raccourcis : `Ctrl+Entrée` pour lire, `Échap` pour arrêter.
 
 ## Voix incluses au catalogue
 
-| Clé | Langue |
-| --- | --- |
-| `fr_FR-siwis-medium` | français |
-| `fr_FR-upmc-medium` | français |
-| `en_US-lessac-medium` | anglais US |
-| `en_US-amy-medium` | anglais US |
-| `en_GB-alba-medium` | anglais GB |
+| Clé | Langue | Licence du jeu de données |
+| --- | --- | --- |
+| `fr_FR-siwis-medium` | français | [CC BY 4.0](https://datashare.is.ed.ac.uk/handle/10283/2353) |
+| `fr_FR-upmc-medium` | français | [CC BY-SA 4.0](https://github.com/marytts/upmc-pierre-data) |
+| `en_US-lessac-medium` | anglais US | [licence de recherche Blizzard 2013](https://www.cstr.ed.ac.uk/projects/blizzard/2013/lessac_blizzard2013/license.html) |
+| `en_US-amy-medium` | anglais US | [voir mimic3-voices](https://github.com/MycroftAI/mimic3-voices) |
+| `en_GB-alba-medium` | anglais GB | [CC BY 4.0](https://datashare.ed.ac.uk/handle/10283/3270) |
 
 Les modèles proviennent de [`rhasspy/piper-voices`](https://huggingface.co/rhasspy/piper-voices)
 (~63 Mo par voix « medium »). Pour en ajouter une, il suffit d'une ligne dans
 `VOICES` (`tts_engine.py`) : l'URL Hugging Face est déduite de la clé.
+
+Chaque voix hérite des conditions de son jeu de données d'entraînement : elles
+varient d'une voix à l'autre et certaines, comme Lessac, passent par une licence
+de recherche nominative. À vérifier avant tout usage commercial de l'audio
+produit. Le fichier `MODEL_CARD` de chaque voix, sur Hugging Face, fait foi.
 
 ## Organisation du code
 
@@ -75,3 +80,23 @@ standard de la plateforme, par exemple
 `~/Library/Application Support/souffleur/` sous macOS. Un ancien répertoire
 `piper-tts-gui/` est repris automatiquement au premier lancement (pas de
 retéléchargement des voix).
+
+## Licences
+
+Le code de ce dépôt est sous licence MIT (voir `LICENSE`).
+
+Il s'appuie sur des dépendances installées séparément par `pip`, sous leurs
+propres licences :
+
+| Dépendance | Licence |
+| --- | --- |
+| [piper-tts](https://github.com/OHF-voice/piper1-gpl) (paquet `piper1-gpl`) | GPL-3.0-or-later |
+| [sounddevice](https://github.com/spatialaudio/python-sounddevice) | MIT |
+| [numpy](https://numpy.org) | BSD-3-Clause |
+
+Aucun code Piper n'est redistribué ici : c'est une dépendance que l'utilisateur
+installe lui-même. Une distribution packagée qui embarquerait Piper (exécutable
+autonome) serait, elle, soumise à la GPL-3.0. `onnxruntime` (MIT), tiré par
+`piper-tts`, n'impose rien de plus.
+
+Les modèles de voix ont leurs propres conditions, détaillées plus haut.
