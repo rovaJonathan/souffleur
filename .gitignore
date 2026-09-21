@@ -1,0 +1,17 @@
+# Environnement virtuel
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Modèles de voix et audio générés (téléchargés à la demande)
+voices/
+*.onnx
+*.onnx.json
+*.wav
+
+# Système
+.DS_Store

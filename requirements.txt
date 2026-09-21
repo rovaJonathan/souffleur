@@ -1,0 +1,11 @@
+# Moteur TTS local (embarque onnxruntime et les données espeak-ng)
+piper-tts>=1.8.0
+
+# Sortie audio directe, sans fichier intermédiaire
+sounddevice>=0.5.0
+
+# Manipulation des échantillons PCM (déjà tiré par piper-tts, épinglé ici pour être explicite)
+numpy>=1.24
+
+# L'interface utilise Tkinter, inclus dans la bibliothèque standard de Python.
+# Sous Linux, sounddevice a besoin de PortAudio : sudo apt install libportaudio2
