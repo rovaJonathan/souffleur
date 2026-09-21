@@ -12,6 +12,8 @@ Principes :
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import threading
 import urllib.request
 import wave
@@ -488,3 +490,83 @@ class WavWriter:
             self.part_path.unlink(missing_ok=True)
             return
         self.part_path.replace(self.path)  # atomique, écrase un ancien fichier
+
+
+# --------------------------------------------------------------------------- #
+# Formats compressés (via ffmpeg, optionnel)
+# --------------------------------------------------------------------------- #
+
+
+@dataclass(frozen=True)
+class ExportFormat:
+    label: str
+    extension: str  # avec le point
+    ffmpeg_args: Tuple[str, ...]  # vide pour le WAV : aucune conversion
+
+
+EXPORT_FORMATS: Tuple[ExportFormat, ...] = (
+    ExportFormat("Fichier WAV", ".wav", ()),
+    ExportFormat("Fichier MP3", ".mp3", ("-codec:a", "libmp3lame", "-q:a", "2")),
+    ExportFormat("Fichier OGG (Vorbis)", ".ogg", ("-codec:a", "libvorbis", "-q:a", "5")),
+)
+"""Le WAV vient en premier : format par défaut, toujours disponible. Les autres
+exigent `ffmpeg` dans le PATH (qualité VBR proche du transparent pour de la
+voix mono)."""
+
+WAV_FORMAT = EXPORT_FORMATS[0]
+
+
+def ffmpeg_path() -> Optional[str]:
+    """Chemin de `ffmpeg` s'il est installé, sinon `None`."""
+    return shutil.which("ffmpeg")
+
+
+def available_export_formats() -> List[ExportFormat]:
+    """WAV seul sans ffmpeg, tous les formats avec."""
+    if ffmpeg_path() is None:
+        return [WAV_FORMAT]
+    return list(EXPORT_FORMATS)
+
+
+def export_format_for(path: str | Path) -> ExportFormat:
+    """Format déduit de l'extension du fichier choisi ; WAV si inconnue."""
+    suffix = Path(path).suffix.lower()
+    for export_format in available_export_formats():
+        if export_format.extension == suffix:
+            return export_format
+    return WAV_FORMAT
+
+
+def convert_audio(wav_path: str | Path, output_path: str | Path, export_format: ExportFormat) -> None:
+    """Convertit un WAV avec ffmpeg ; écrit via `.part` puis renomme.
+
+    `ffmpeg` est lancé sans console (utile en application fenêtrée) et ses
+    dernières lignes d'erreur remontent dans l'exception, pour qu'un encodeur
+    manquant (`libmp3lame` absent de la compilation) soit compréhensible.
+    """
+    ffmpeg = ffmpeg_path()
+    if ffmpeg is None:
+        raise RuntimeError("ffmpeg est introuvable dans le PATH.")
+    output = Path(output_path)
+    part = output.with_name(output.name + ".part")
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(wav_path),
+        *export_format.ffmpeg_args,
+        "-f",
+        export_format.extension.lstrip("."),  # l'extension .part ne dit rien à ffmpeg
+        str(part),
+    ]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+        if completed.returncode != 0:
+            detail = completed.stderr.strip().splitlines()[-3:]
+            raise RuntimeError("ffmpeg a échoué : " + " / ".join(detail or ["sans message"]))
+        part.replace(output)
+    finally:
+        part.unlink(missing_ok=True)

@@ -21,6 +21,7 @@ import queue
 import sys
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Iterable, Iterator, List, Optional, Tuple
 
@@ -37,9 +38,13 @@ from tts_engine import (
     VOLUME_MAX,
     VOLUME_MIN,
     PiperEngine,
+    WAV_FORMAT,
     Segment,
     WavWriter,
+    available_export_formats,
+    convert_audio,
     download_voice,
+    export_format_for,
     is_voice_available,
     segment_text,
 )
@@ -212,9 +217,9 @@ class SouffleurApp(ttk.Frame):
         )
         self.stop_button.grid(row=0, column=2, padx=6)
 
-        self.export_button = ttk.Button(
-            buttons, text="⬇  Exporter en WAV", command=self.on_export
-        )
+        # « Exporter… » si ffmpeg ouvre le choix du format, sinon WAV seul.
+        export_label = "⬇  Exporter…" if len(available_export_formats()) > 1 else "⬇  Exporter en WAV"
+        self.export_button = ttk.Button(buttons, text=export_label, command=self.on_export)
         self.export_button.grid(row=0, column=3)
 
         self.open_button = ttk.Button(buttons, text="📂  Ouvrir…", command=self.on_open)
@@ -620,14 +625,18 @@ class SouffleurApp(ttk.Frame):
     # ---------------------------------------------------------- export ----
 
     def _start_export(self, text: str, key: str) -> None:
+        # MP3 / OGG ne sont proposés que si ffmpeg est présent ; le format
+        # retenu est déduit de l'extension du nom choisi (WAV par défaut).
+        formats = available_export_formats()
         path = filedialog.asksaveasfilename(
-            title="Exporter en WAV",
-            defaultextension=".wav",
-            initialfile="souffleur.wav",
-            filetypes=[("Fichier WAV", "*.wav")],
+            title="Exporter l'audio",
+            defaultextension=WAV_FORMAT.extension,
+            initialfile="souffleur" + WAV_FORMAT.extension,
+            filetypes=[(f.label, "*" + f.extension) for f in formats],
         )
         if not path:
             return
+        export_format = export_format_for(path)
 
         speed, volume = self.speed_var.get(), self.volume_var.get()
         self.player.reset()  # même drapeau : « Arrêter » annule aussi l'export
@@ -636,11 +645,14 @@ class SouffleurApp(ttk.Frame):
         self._set_status("Génération du fichier…")
 
         def worker() -> None:
+            # Pour un format compressé, le WAV intermédiaire est écrit à côté
+            # du fichier final (même disque : pas de copie), puis converti.
+            wav_path = path if export_format is WAV_FORMAT else path + ".tmp.wav"
             try:
                 # Écriture au fil de l'eau : le fichier grandit pendant la
                 # synthèse, rien n'est accumulé en mémoire. Un arrêt laisse
                 # le `.part` être supprimé par `WavWriter`.
-                with WavWriter(path) as wav:
+                with WavWriter(wav_path) as wav:
                     for chunk in self.engine.synthesize_text(
                         key,
                         text,
@@ -655,6 +667,12 @@ class SouffleurApp(ttk.Frame):
                 if self.player.stopped or wav.frames == 0:
                     self._ui(self._on_export_done, None)
                     return
+                if export_format is not WAV_FORMAT:
+                    self._ui(self._set_status, f"Conversion en {export_format.extension[1:].upper()}…")
+                    try:
+                        convert_audio(wav_path, path, export_format)
+                    finally:
+                        Path(wav_path).unlink(missing_ok=True)
             except Exception as exc:
                 self._ui(self._on_error, f"Export impossible : {exc}")
                 return

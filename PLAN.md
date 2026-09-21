@@ -84,7 +84,9 @@ Fichiers : `tts_engine.py`, `main.py`. Taille : ~30 lignes.
 
 ## 6. Export MP3 / OGG
 
-- [ ] Proposer un format compressé dans la boîte d'export.
+- [x] Proposer un format compressé dans la boîte d'export.
+      (branche `feat/export-compresse` ; MP3 et OGG si `ffmpeg` dans le PATH,
+      format déduit de l'extension, WAV intermédiaire supprimé après conversion)
 
 **Comment** : sans dépendance native, passer par `ffmpeg` s'il est présent dans
 le `PATH` (`shutil.which`), sinon masquer l'option. Le WAV reste le format par

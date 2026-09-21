@@ -17,6 +17,9 @@ python main.py
 
 Sous Linux, `sounddevice` a besoin de PortAudio : `sudo apt install libportaudio2`.
 
+Optionnel : avec `ffmpeg` dans le `PATH` (`brew install ffmpeg`, `apt install
+ffmpeg`), l'export propose aussi MP3 et OGG. Sans lui, WAV seulement.
+
 ## Utilisation
 
 1. Choisir une voix dans le menu déroulant (le pastille indique si le modèle est
@@ -35,10 +38,11 @@ Sous Linux, `sounddevice` a besoin de PortAudio : `sudo apt install libportaudio
    et la reprend exactement où elle en était.
 6. **■ Arrêter** — coupe la lecture *et* la génération en cours (< 100 ms),
    même en pause.
-7. **⬇ Exporter en WAV** — écrit tout le texte dans un fichier mono 16 bits,
+7. **⬇ Exporter…** — écrit tout le texte dans un fichier WAV mono 16 bits,
    au fil de la synthèse (mémoire constante, même pour une heure d'audio).
    Le fichier est écrit sous `.part` puis renommé : un export arrêté ne laisse
-   rien derrière lui.
+   rien derrière lui. Si `ffmpeg` est installé, choisir un nom en `.mp3` ou
+   `.ogg` convertit le WAV à la fin (le format est déduit de l'extension).
 
 Raccourcis : `Ctrl+O` (ou `Cmd+O` sur macOS) pour ouvrir un fichier,
 `Ctrl+Entrée` pour lire, `Espace` pour pause / reprise (pendant la lecture),
