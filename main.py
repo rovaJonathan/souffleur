@@ -57,6 +57,16 @@ VOLUME_STEP = 0.05
 """Pas de quantification des curseurs, appliqué au relâchement : un réglage
 lisible (« 1,25 × ») et stable d'une session à l'autre."""
 
+OPEN_FILETYPES = [
+    ("Fichiers texte", "*.txt *.md *.markdown *.text"),
+    ("Tous les fichiers", "*"),
+]
+OPEN_SHORTCUTS = ("<Control-o>", "<Command-o>") if sys.platform == "darwin" else ("<Control-o>",)
+OPEN_ENCODINGS = ("utf-8-sig", "latin-1")
+"""Encodages essayés dans l'ordre à l'ouverture : UTF-8 (BOM toléré), puis
+latin-1 qui accepte n'importe quel octet — un fichier n'est donc jamais refusé
+pour son encodage, au pire quelques accents sont faux."""
+
 PAUSE_LABEL = "⏸  Pause"
 RESUME_LABEL = "▶  Reprendre"
 
@@ -208,8 +218,11 @@ class SouffleurApp(ttk.Frame):
         )
         self.export_button.grid(row=0, column=3)
 
+        self.open_button = ttk.Button(buttons, text="📂  Ouvrir…", command=self.on_open)
+        self.open_button.grid(row=0, column=5, sticky="e")
+
         ttk.Button(buttons, text="Effacer", command=self.on_clear).grid(
-            row=0, column=5, sticky="e"
+            row=0, column=6, sticky="e", padx=(6, 0)
         )
 
         # --- Progression + statut ---------------------------------------- #
@@ -223,6 +236,11 @@ class SouffleurApp(ttk.Frame):
 
         # --- Raccourcis clavier ------------------------------------------- #
         self.master.bind("<Control-Return>", lambda _event: self.on_play())
+        # Lié aussi sur la zone de texte : la classe `Text` réserve déjà
+        # `Ctrl+O` (insertion d'une ligne) et passerait avant la fenêtre.
+        for sequence in OPEN_SHORTCUTS:
+            self.master.bind(sequence, self._on_open_shortcut)
+            self.text.bind(sequence, self._on_open_shortcut)
         self.master.bind("<Escape>", lambda _event: self.on_stop())
         self.master.bind("<space>", self._on_space)
         self.master.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -401,6 +419,31 @@ class SouffleurApp(ttk.Frame):
     def on_clear(self) -> None:
         self._clear_placeholder()
         self.text.delete("1.0", "end")
+
+    def _on_open_shortcut(self, _event: object = None) -> str:
+        self.on_open()
+        return "break"  # empêche `Text` d'insérer sa ligne vide sur Ctrl+O
+
+    def on_open(self) -> None:
+        """Remplace le contenu de la zone de texte par celui d'un fichier."""
+        if self._busy:
+            return  # texte verrouillé pendant lecture/export
+        path = filedialog.askopenfilename(title="Ouvrir un fichier texte", filetypes=OPEN_FILETYPES)
+        if not path:
+            return
+        try:
+            content = _read_text_file(path)
+        except OSError as exc:  # introuvable, droits, dossier…
+            messagebox.showerror(APP_TITLE, f"Ouverture impossible : {exc}")
+            return
+
+        self.on_clear()
+        self.text.insert("1.0", content)
+        self.text.edit_reset()  # Ctrl+Z ne doit pas « défaire » l'ouverture
+        self.text.mark_set("insert", "1.0")
+        self.text.see("1.0")
+        self.text.focus_set()
+        self._set_status(f"Fichier ouvert : {path}")
 
     def on_close(self) -> None:
         self._alive = False  # arrête la boucle `_pump`
@@ -667,6 +710,7 @@ class SouffleurApp(ttk.Frame):
         normal_state = "disabled" if busy else "normal"
         self.play_button.configure(state=normal_state)
         self.export_button.configure(state=normal_state)
+        self.open_button.configure(state=normal_state)
         self.voice_combo.configure(state="disabled" if busy else "readonly")
         # Curseurs actifs pendant la lecture (réglages relus en continu), mais
         # gelés pendant l'export : là, le réglage est figé dans le WAV généré.
@@ -685,6 +729,25 @@ class SouffleurApp(ttk.Frame):
         self.progress.configure(mode="determinate", value=0)
         self._set_status("Erreur.")
         messagebox.showerror(APP_TITLE, message)
+
+
+def _read_text_file(path: str) -> str:
+    """Lit un fichier texte en essayant `OPEN_ENCODINGS` dans l'ordre.
+
+    Les fins de ligne Windows sont normalisées : `tk.Text` afficherait sinon
+    un caractère parasite en bout de chaque ligne.
+    """
+    with open(path, "rb") as handle:
+        raw = handle.read()
+    for encoding in OPEN_ENCODINGS:
+        try:
+            content = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:  # latin-1 n'échoue jamais : jamais atteint, gardé par prudence
+        content = raw.decode("utf-8", errors="replace")
+    return content.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def _snap(value: float, step: float, low: float, high: float) -> float:

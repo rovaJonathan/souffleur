@@ -55,12 +55,15 @@ Fichiers : `audio_player.py`, `main.py`. Taille : ~40 lignes.
 
 ## 4. Ouvrir un fichier texte
 
-- [ ] Bouton « Ouvrir… » (`Ctrl+O`) pour `.txt` / `.md`, et glisser-déposer si
-      possible sans dépendance externe.
+- [x] Bouton « Ouvrir… » (`Ctrl+O` / `Cmd+O`) pour `.txt` / `.md`.
+      (branche `feat/ouvrir-fichier`)
+- [ ] ~~Glisser-déposer~~ : abandonné, Tk 9 n'a toujours pas de DnD natif et
+      `tkinterdnd2` embarque un binaire. Le bouton suffit.
 
-**Comment** : `filedialog.askopenfilename`, lecture UTF-8 avec repli latin-1,
-remplace le contenu de la zone de texte. Le glisser-déposer natif Tk n'existe
-pas sans `tkinterdnd2` : à évaluer, sinon s'en tenir au bouton.
+**Comment** : `filedialog.askopenfilename`, lecture UTF-8 (BOM toléré) avec
+repli latin-1, fins de ligne normalisées, remplace le contenu de la zone de
+texte et vide la pile d'annulation. `Ctrl+O` est aussi lié sur le `Text`
+(sinon la classe insère une ligne vide avant que la fenêtre ne voie la touche).
 
 Fichiers : `main.py`. Taille : ~30 lignes.
 
