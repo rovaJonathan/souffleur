@@ -22,9 +22,9 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from typing import Callable, Optional
+from typing import Callable, Iterable, Iterator, List, Optional, Tuple
 
-from audio_player import AudioPlayer, prefetch
+from audio_player import AudioChunkTuple, AudioPlayer, prefetch
 from settings import Settings, voices_dir
 from tts_engine import (
     DEFAULT_SPEED,
@@ -37,10 +37,11 @@ from tts_engine import (
     VOLUME_MAX,
     VOLUME_MIN,
     PiperEngine,
+    Segment,
     concatenate,
     download_voice,
     is_voice_available,
-    split_text,
+    segment_text,
     write_wav,
 )
 
@@ -55,6 +56,13 @@ SPEED_STEP = 0.05
 VOLUME_STEP = 0.05
 """Pas de quantification des curseurs, appliqué au relâchement : un réglage
 lisible (« 1,25 × ») et stable d'une session à l'autre."""
+
+CURRENT_TAG = "current"
+CURRENT_BACKGROUND = "#fff1a8"
+CURRENT_FOREGROUND = "#1a1a1a"
+"""Surlignage du segment en cours de lecture. La couleur du texte est fixée
+avec celle du fond : en thème sombre, le texte est blanc par défaut et
+disparaîtrait sur le jaune."""
 
 
 class SouffleurApp(ttk.Frame):
@@ -133,6 +141,9 @@ class SouffleurApp(ttk.Frame):
         self.text.insert("1.0", PLACEHOLDER)
         self.text.tag_add("placeholder", "1.0", "end")
         self.text.tag_configure("placeholder", foreground="gray50")
+        self.text.tag_configure(
+            CURRENT_TAG, background=CURRENT_BACKGROUND, foreground=CURRENT_FOREGROUND
+        )
         self.text.bind("<FocusIn>", self._clear_placeholder, add="+")
         self.text.bind("<Key>", self._clear_placeholder, add="+")
 
@@ -359,9 +370,29 @@ class SouffleurApp(ttk.Frame):
             self._start_export(text, key)
 
     def _get_text(self) -> str:
+        """Contenu brut de la zone de texte (vide si seul l'exemple est affiché).
+
+        Volontairement sans `strip()` : les positions calculées par
+        `segment_text` doivent rester alignées sur le contenu du widget pour
+        le surlignage. Le découpage ignore de lui-même les espaces superflus.
+        """
         if "placeholder" in self.text.tag_names():
             return ""
-        return self.text.get("1.0", "end").strip()
+        text = self.text.get("1.0", "end-1c")  # sans le retour final ajouté par Tk
+        return text if text.strip() else ""
+
+    # ------------------------------------------------------- surlignage ---
+
+    def _highlight(self, segment: Segment) -> None:
+        """Surligne le segment et fait défiler pour le montrer en entier."""
+        self.text.tag_remove(CURRENT_TAG, "1.0", "end")
+        start, end = f"1.0+{segment.start}c", f"1.0+{segment.end}c"
+        self.text.tag_add(CURRENT_TAG, start, end)
+        self.text.see(end)
+        self.text.see(start)
+
+    def _clear_highlight(self) -> None:
+        self.text.tag_remove(CURRENT_TAG, "1.0", "end")
 
     # ---------------------------------------------------- téléchargement --
 
@@ -400,31 +431,34 @@ class SouffleurApp(ttk.Frame):
     # --------------------------------------------------------- lecture ----
 
     def _start_play(self, text: str, key: str) -> None:
-        segments = split_text(text)
+        segments = segment_text(text)
         # Réglages lus ici, sur le thread Tkinter : le worker ne touche à aucun
         # widget. Ils valent donc pour toute la lecture, d'où des curseurs gelés.
         speed, volume = self.speed_var.get(), self.volume_var.get()
         self.player.reset()  # réarmé ici, avant tout risque de clic « Arrêter »
-        self._set_busy(True, stop_enabled=True)
+        self._set_busy(True, stop_enabled=True, lock_text=True)
         self.progress.configure(mode="indeterminate")
         self.progress.start(15)
         self._set_status("Chargement de la voix…")
 
         def worker() -> None:
             try:
-                chunks = self.engine.synthesize_text(
+                tagged = self.engine.synthesize_segments(
                     key,
-                    text,
+                    segments,
                     stop_event=self.player.stop_event,
-                    on_segment=self._on_segment_progress,
                     speed=speed,
                     volume=volume,
                 )
                 # prefetch : la synthèse du segment suivant tourne pendant la
                 # lecture du segment courant, d'où un enchaînement sans blanc.
+                # Le suivi est branché *après* la file : il reflète ce qui
+                # part vers la carte son, pas ce qui est généré en avance.
                 self.player.play(
-                    prefetch(chunks, size=4, stop_event=self.player.stop_event),
-                    on_first_chunk=lambda: self._ui(self._set_status, "Lecture en cours…"),
+                    self._track_playback(
+                        prefetch(tagged, size=4, stop_event=self.player.stop_event),
+                        segments,
+                    )
                 )
             except Exception as exc:
                 self._ui(self._on_error, f"Erreur de synthèse : {exc}")
@@ -433,18 +467,35 @@ class SouffleurApp(ttk.Frame):
 
         threading.Thread(target=worker, name="tts-play", daemon=True).start()
 
-    def _on_segment_progress(self, index: int, total: int, _segment: str) -> None:
-        """Appelé depuis le thread de synthèse : aucun accès direct aux widgets."""
-        self._ui(self._show_segment_progress, index, total)
+    def _track_playback(
+        self, tagged: Iterable[Tuple[int, AudioChunkTuple]], segments: List[Segment]
+    ) -> Iterator[AudioChunkTuple]:
+        """Retire l'index de segment des chunks et signale chaque changement.
 
-    def _show_segment_progress(self, index: int, total: int) -> None:
-        self._set_status(f"Génération — segment {index + 1}/{total}")
+        Tourne dans le thread de lecture, juste avant l'écriture du chunk :
+        le surlignage suit donc l'audio à un bloc près.
+        """
+        current = -1
+        for index, chunk in tagged:
+            if index != current:
+                current = index
+                self._ui(self._show_segment, "Lecture", index, len(segments), segments[index])
+            yield chunk
+
+    def _on_segment_progress(self, index: int, total: int, segment: Segment) -> None:
+        """Appelé depuis le thread de synthèse : aucun accès direct aux widgets."""
+        self._ui(self._show_segment, "Génération", index, total, segment)
+
+    def _show_segment(self, verb: str, index: int, total: int, segment: Segment) -> None:
+        self._set_status(f"{verb} — segment {index + 1}/{total}")
+        self._highlight(segment)
         # En lecture la barre est en mode « animation » : on ne la pilote pas.
         if str(self.progress.cget("mode")) == "determinate":
             self.progress.configure(value=(index + 1) / total * 100)
 
     def _on_play_done(self, segment_count: int) -> None:
         self._set_busy(False)
+        self._clear_highlight()
         self.progress.stop()
         self.progress.configure(mode="determinate", value=0)
         if self.player.stopped:
@@ -466,7 +517,7 @@ class SouffleurApp(ttk.Frame):
 
         speed, volume = self.speed_var.get(), self.volume_var.get()
         self.player.reset()  # même drapeau : « Arrêter » annule aussi l'export
-        self._set_busy(True, stop_enabled=True)
+        self._set_busy(True, stop_enabled=True, lock_text=True)
         self.progress.configure(mode="determinate", maximum=100, value=0)
         self._set_status("Génération du fichier…")
 
@@ -495,6 +546,7 @@ class SouffleurApp(ttk.Frame):
 
     def _on_export_done(self, path: Optional[str]) -> None:
         self._set_busy(False)
+        self._clear_highlight()
         self.progress.configure(value=0)
         if path is None:
             self._set_status("Export annulé.")
@@ -528,7 +580,9 @@ class SouffleurApp(ttk.Frame):
     def _set_status(self, message: str) -> None:
         self.status_var.set(message)
 
-    def _set_busy(self, busy: bool, stop_enabled: bool = False) -> None:
+    def _set_busy(
+        self, busy: bool, stop_enabled: bool = False, lock_text: bool = False
+    ) -> None:
         self._busy = busy
         normal_state = "disabled" if busy else "normal"
         self.play_button.configure(state=normal_state)
@@ -539,9 +593,13 @@ class SouffleurApp(ttk.Frame):
         self.speed_scale.configure(state=normal_state)
         self.volume_scale.configure(state=normal_state)
         self.stop_button.configure(state="normal" if (busy and stop_enabled) else "disabled")
+        # Texte verrouillé pendant lecture/export : une modification décalerait
+        # le surlignage par rapport aux positions calculées au départ.
+        self.text.configure(state="disabled" if (busy and lock_text) else "normal")
 
     def _on_error(self, message: str) -> None:
         self._set_busy(False)
+        self._clear_highlight()
         self.progress.stop()
         self.progress.configure(mode="determinate", value=0)
         self._set_status("Erreur.")

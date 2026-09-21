@@ -169,63 +169,119 @@ MAX_SEGMENT_CHARS = 350
 """Taille cible d'un segment. Assez court pour un premier son rapide, assez
 long pour garder une prosodie naturelle."""
 
-# Fin de phrase : ponctuation forte, éventuels guillemets/parenthèses, espace.
-_SENTENCE_END = re.compile(r"(?<=[.!?…])[\"'»)\]]*\s+")
+# Paragraphe : au moins une ligne vide.
+_PARAGRAPH_SEP = re.compile(r"\n\s*\n")
+# Fin de phrase : ponctuation forte, éventuels guillemets/parenthèses (groupe 1,
+# conservés dans la phrase), puis espace.
+_SENTENCE_END = re.compile(r"(?<=[.!?…])([\"'»)\]]*)\s+")
 # Ponctuation faible, utilisée seulement pour casser une phrase trop longue.
 _SOFT_BREAK = re.compile(r"(?<=[,;:])\s+")
+_WHITESPACE = re.compile(r"\s+")
+
+Span = Tuple[int, int]
+"""Intervalle [début, fin) d'indices dans le texte d'origine."""
+
+
+@dataclass(frozen=True)
+class Segment:
+    """Un morceau de texte synthétisé d'un bloc, avec sa position d'origine.
+
+    `text` est la version normalisée (espaces et retours à la ligne réduits à
+    un espace) envoyée à Piper ; `start`/`end` situent le segment dans le texte
+    fourni par l'utilisateur, pour le surligner pendant la lecture.
+    """
+
+    text: str
+    start: int
+    end: int
 
 
 def split_text(text: str, max_chars: int = MAX_SEGMENT_CHARS) -> List[str]:
     """Découpe le texte en segments synthétisables l'un après l'autre."""
-    segments: List[str] = []
-    for paragraph in re.split(r"\n\s*\n", text.strip()):
-        paragraph = " ".join(paragraph.split())  # normalise espaces et retours ligne
-        if not paragraph:
-            continue
-        buffer = ""
-        for sentence in _sentences(paragraph, max_chars):
-            if not buffer:
+    return [segment.text for segment in segment_text(text, max_chars)]
+
+
+def segment_text(text: str, max_chars: int = MAX_SEGMENT_CHARS) -> List[Segment]:
+    """Comme `split_text`, mais conserve la position de chaque segment.
+
+    Le découpage travaille sur des intervalles du texte d'origine plutôt que
+    sur des copies, pour que les positions restent exactes malgré la
+    normalisation des espaces.
+    """
+    segments: List[Segment] = []
+    for paragraph in _spans(text, (0, len(text)), _PARAGRAPH_SEP):
+        buffer: Optional[Span] = None
+        for sentence in _sentence_spans(text, paragraph, max_chars):
+            if buffer is None:
                 buffer = sentence
-            elif len(buffer) + 1 + len(sentence) <= max_chars:
-                buffer = f"{buffer} {sentence}"
+            elif len(_normalize(text, (buffer[0], sentence[1]))) <= max_chars:
+                buffer = (buffer[0], sentence[1])
             else:
-                segments.append(buffer)
+                segments.append(_segment(text, buffer))
                 buffer = sentence
-        if buffer:
-            segments.append(buffer)
+        if buffer is not None:
+            segments.append(_segment(text, buffer))
     return segments
 
 
-def _sentences(paragraph: str, max_chars: int) -> Iterator[str]:
-    for sentence in _SENTENCE_END.split(paragraph):
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-        if len(sentence) <= max_chars:
+def _segment(text: str, span: Span) -> Segment:
+    return Segment(_normalize(text, span), span[0], span[1])
+
+
+def _normalize(text: str, span: Span) -> str:
+    """Espaces et retours à la ligne réduits à un seul espace."""
+    return " ".join(text[span[0] : span[1]].split())
+
+
+def _spans(text: str, span: Span, separator: re.Pattern) -> Iterator[Span]:
+    """Sous-intervalles de `span` entre deux occurrences de `separator`.
+
+    Chaque morceau est débarrassé des espaces à ses bords ; les vides sont
+    ignorés. Si le séparateur a un groupe 1, son contenu reste rattaché au
+    morceau précédent (guillemet fermant après le point, par exemple).
+    """
+    cursor, end = span
+    for match in separator.finditer(text, cursor, end):
+        piece_end = match.end(1) if match.re.groups else match.start()
+        yield from _stripped(text, (cursor, piece_end))
+        cursor = match.end()
+    yield from _stripped(text, (cursor, end))
+
+
+def _stripped(text: str, span: Span) -> Iterator[Span]:
+    start, end = span
+    while start < end and text[start].isspace():
+        start += 1
+    while end > start and text[end - 1].isspace():
+        end -= 1
+    if start < end:
+        yield start, end
+
+
+def _sentence_spans(text: str, paragraph: Span, max_chars: int) -> Iterator[Span]:
+    for sentence in _spans(text, paragraph, _SENTENCE_END):
+        if len(_normalize(text, sentence)) <= max_chars:
             yield sentence
         else:
-            yield from _wrap_long_sentence(sentence, max_chars)
+            yield from _wrap_long_sentence(text, sentence, max_chars)
 
 
-def _wrap_long_sentence(sentence: str, max_chars: int) -> Iterator[str]:
+def _wrap_long_sentence(text: str, sentence: Span, max_chars: int) -> Iterator[Span]:
     """Phrase sans ponctuation forte : on casse sur virgules, sinon sur les mots."""
-    for piece in _SOFT_BREAK.split(sentence):
-        piece = piece.strip()
-        if not piece:
-            continue
-        if len(piece) <= max_chars:
+    for piece in _spans(text, sentence, _SOFT_BREAK):
+        if len(_normalize(text, piece)) <= max_chars:
             yield piece
             continue
-        buffer = ""
-        for word in piece.split(" "):
-            if not buffer:
+        buffer: Optional[Span] = None
+        for word in _spans(text, piece, _WHITESPACE):
+            if buffer is None:
                 buffer = word
-            elif len(buffer) + 1 + len(word) <= max_chars:
-                buffer = f"{buffer} {word}"
+            elif len(_normalize(text, (buffer[0], word[1]))) <= max_chars:
+                buffer = (buffer[0], word[1])
             else:
                 yield buffer
                 buffer = word
-        if buffer:
+        if buffer is not None:
             yield buffer
 
 
@@ -237,6 +293,9 @@ SEGMENT_GAP_MS = 120
 """Silence inséré entre deux segments, pour éviter un enchaînement abrupt."""
 
 AudioChunkTuple = Tuple[int, np.ndarray]  # (fréquence d'échantillonnage, int16 mono)
+
+SegmentCallback = Callable[[int, int, Segment], None]
+"""Appelé avec (index, total, segment) avant la synthèse de chaque segment."""
 
 SPEED_MIN, SPEED_MAX = 0.5, 2.0
 DEFAULT_SPEED = 1.0
@@ -297,27 +356,31 @@ class PiperEngine:
         for chunk in voice.synthesize(segment, syn_config=syn_config):
             yield chunk.sample_rate, chunk.audio_int16_array
 
-    def synthesize_text(
+    def synthesize_segments(
         self,
         key: str,
-        text: str,
+        segments: List[Segment],
         stop_event: Optional[threading.Event] = None,
-        on_segment: Optional[Callable[[int, int, str], None]] = None,
+        on_segment: Optional[SegmentCallback] = None,
         speed: float = DEFAULT_SPEED,
         volume: float = DEFAULT_VOLUME,
-    ) -> Iterator[AudioChunkTuple]:
-        """Génère l'audio de tout le texte, segment par segment, en streaming.
+    ) -> Iterator[Tuple[int, AudioChunkTuple]]:
+        """Génère l'audio des segments en streaming, chaque chunk étant
+        accompagné de l'index du segment dont il provient.
 
-        `on_segment(index, total, segment)` est appelé avant chaque segment, ce
-        qui permet à l'interface d'afficher une progression réelle.
-        `stop_event` est vérifié entre chaque chunk : l'arrêt est quasi immédiat.
+        Cet index permet à l'interface de suivre ce qui est *joué* et non ce qui
+        est *généré* : avec le préchargement, la synthèse a plusieurs secondes
+        d'avance sur la lecture.
+
+        `on_segment(index, total, segment)` est appelé avant la synthèse de
+        chaque segment. `stop_event` est vérifié entre chaque chunk : l'arrêt
+        est quasi immédiat.
 
         La voix est chargée ici (et non par l'appelant) : c'est un générateur,
         donc le chargement — une seconde environ — a lieu dans le thread qui
         consomme, jamais dans celui de l'interface.
         """
         syn_config = synthesis_config(self.load(key), speed, volume)
-        segments = split_text(text)
         total = len(segments)
         sample_rate: Optional[int] = None
 
@@ -329,13 +392,32 @@ class PiperEngine:
 
             # Silence de liaison entre deux segments (pas avant le premier).
             if index > 0 and sample_rate:
-                yield sample_rate, _silence(sample_rate, SEGMENT_GAP_MS)
+                yield index, (sample_rate, _silence(sample_rate, SEGMENT_GAP_MS))
 
-            for rate, samples in self.synthesize_segment(key, segment, syn_config):
+            for rate, samples in self.synthesize_segment(key, segment.text, syn_config):
                 if stop_event is not None and stop_event.is_set():
                     return
                 sample_rate = rate
-                yield rate, samples
+                yield index, (rate, samples)
+
+    def synthesize_text(
+        self,
+        key: str,
+        text: str,
+        stop_event: Optional[threading.Event] = None,
+        on_segment: Optional[SegmentCallback] = None,
+        speed: float = DEFAULT_SPEED,
+        volume: float = DEFAULT_VOLUME,
+    ) -> Iterator[AudioChunkTuple]:
+        """Génère l'audio de tout le texte, segment par segment, en streaming.
+
+        Raccourci : découpe le texte puis délègue à `synthesize_segments`, sans
+        l'index de segment (suffisant pour l'export ou un script).
+        """
+        for _index, chunk in self.synthesize_segments(
+            key, segment_text(text), stop_event, on_segment, speed, volume
+        ):
+            yield chunk
 
 
 def _silence(sample_rate: int, milliseconds: int) -> np.ndarray:

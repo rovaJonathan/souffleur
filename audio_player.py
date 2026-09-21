@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import threading
 from queue import Empty, Full, Queue
-from typing import Callable, Iterable, Iterator, Optional, Tuple
+from typing import Iterable, Iterator, Optional, Tuple, TypeVar
 
 import numpy as np
 import sounddevice as sd
 
 AudioChunkTuple = Tuple[int, np.ndarray]
+T = TypeVar("T")
 
 BLOCK_SAMPLES = 2048
 """Taille des blocs écrits sur la carte son (~93 ms à 22 050 Hz).
@@ -56,16 +57,11 @@ class AudioPlayer:
 
     # -- lecture ----------------------------------------------------------- #
 
-    def play(
-        self,
-        chunks: Iterable[AudioChunkTuple],
-        on_first_chunk: Optional[Callable[[], None]] = None,
-    ) -> None:
+    def play(self, chunks: Iterable[AudioChunkTuple]) -> None:
         """Bloquant : à appeler depuis un thread de travail, jamais depuis l'UI.
 
         Retourne quand tout a été joué, ou juste après un `stop()`.
         """
-        first = True
         try:
             for sample_rate, samples in chunks:
                 if self._stop_event.is_set():
@@ -73,10 +69,6 @@ class AudioPlayer:
                 if samples.size == 0:
                     continue
                 self._ensure_stream(sample_rate)
-                if first:
-                    first = False
-                    if on_first_chunk is not None:
-                        on_first_chunk()
                 if not self._write_chunk(samples):
                     break
         finally:
@@ -139,15 +131,18 @@ class AudioPlayer:
 
 
 def prefetch(
-    chunks: Iterable[AudioChunkTuple],
+    chunks: Iterable[T],
     size: int = 4,
     stop_event: Optional[threading.Event] = None,
-) -> Iterator[AudioChunkTuple]:
+) -> Iterator[T]:
     """Génère les chunks en avance dans un thread, via une file bornée.
 
     Sans cela, la synthèse du chunk N+1 ne démarrerait qu'une fois le chunk N
     entièrement joué : on entendrait un blanc entre les segments. La file
     bornée évite aussi de tout garder en mémoire sur un texte très long.
+
+    Indifférent au type des éléments : des chunks audio nus ou accompagnés de
+    leur index de segment.
     """
     queue: Queue = Queue(maxsize=size)
     sentinel = object()

@@ -24,7 +24,8 @@ Sous Linux, `sounddevice` a besoin de PortAudio : `sudo apt install libportaudio
 2. Coller ou taper le texte.
 3. Régler **Vitesse** (0,5× à 2×) et **Volume** (0 à 100 %) si besoin. Les deux
    sont mémorisés et valent aussi bien pour la lecture que pour l'export.
-4. **▶ Lire** — synthétise et joue directement sur la sortie audio.
+4. **▶ Lire** — synthétise et joue directement sur la sortie audio. Le passage
+   en cours de lecture est surligné dans le texte, qui défile tout seul.
    Si le modèle manque, l'application propose de le télécharger (barre de
    progression), puis enchaîne toute seule sur la lecture.
 5. **■ Arrêter** — coupe la lecture *et* la génération en cours (< 100 ms).
@@ -62,10 +63,17 @@ produit. Le fichier `MODEL_CARD` de chaque voix, sur Hugging Face, fait foi.
 
 ### Points de conception
 
-- **Textes longs** : `split_text()` découpe en paragraphes, puis en phrases,
+- **Textes longs** : `segment_text()` découpe en paragraphes, puis en phrases,
   puis regroupe en segments de ~350 caractères (coupe de secours sur les
   virgules puis les mots). Chaque segment est synthétisé séparément : le son
   démarre en moins d'une seconde quelle que soit la longueur du texte.
+- **Suivi du texte** : le découpage travaille sur des intervalles du texte
+  d'origine, chaque segment connaît donc sa position exacte dans la zone de
+  texte. Les chunks audio sortent du moteur accompagnés de leur index de
+  segment ; c'est le thread de lecture, juste avant d'écrire un chunk sur la
+  carte son, qui demande le surlignage. Il suit ainsi l'audio réellement joué,
+  et non la génération qui a plusieurs secondes d'avance. Le texte est
+  verrouillé pendant la lecture pour que les positions restent valables.
 - **Pas de blanc entre segments** : `prefetch()` génère le segment suivant dans
   un thread pendant que le courant est joué, via une file bornée (mémoire
   constante).
