@@ -21,7 +21,8 @@ Sous Linux, `sounddevice` a besoin de PortAudio : `sudo apt install libportaudio
 
 1. Choisir une voix dans le menu déroulant (le pastille indique si le modèle est
    déjà installé). Le choix est mémorisé pour les sessions suivantes.
-2. Coller ou taper le texte.
+2. Coller ou taper le texte, ou **📂 Ouvrir…** un fichier `.txt` / `.md`
+   (UTF-8, repli latin-1).
 3. Régler **Vitesse** (0,5× à 2×) et **Volume** (0 à 100 %) si besoin. Les deux
    sont mémorisés et valent aussi bien pour la lecture que pour l'export.
    Ils restent modifiables pendant la lecture : le volume change aussitôt, la
@@ -36,8 +37,9 @@ Sous Linux, `sounddevice` a besoin de PortAudio : `sudo apt install libportaudio
    même en pause.
 7. **⬇ Exporter en WAV** — écrit tout le texte dans un fichier mono 16 bits.
 
-Raccourcis : `Ctrl+Entrée` pour lire, `Espace` pour pause / reprise (pendant
-la lecture), `Échap` pour arrêter.
+Raccourcis : `Ctrl+O` (ou `Cmd+O` sur macOS) pour ouvrir un fichier,
+`Ctrl+Entrée` pour lire, `Espace` pour pause / reprise (pendant la lecture),
+`Échap` pour arrêter.
 
 ## Voix incluses au catalogue
 
