@@ -140,7 +140,7 @@ def _download_file(
     progress: Optional[Callable[[int, int], None]] = None,
 ) -> None:
     temp = destination.with_suffix(destination.suffix + ".part")
-    request = urllib.request.Request(url, headers={"User-Agent": "piper-tts-gui"})
+    request = urllib.request.Request(url, headers={"User-Agent": "souffleur"})
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             total = int(response.headers.get("Content-Length") or 0)

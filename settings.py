@@ -12,22 +12,43 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
-APP_NAME = "piper-tts-gui"
+APP_NAME = "souffleur"
+LEGACY_APP_NAME = "piper-tts-gui"
+"""Ancien nom du répertoire de données, migré au premier lancement."""
+
+
+def _platform_dir(app_name: str) -> Path:
+    """Emplacement standard des données pour cette plateforme (pas de création)."""
+    xdg = os.environ.get("XDG_DATA_HOME")
+    if xdg:
+        return Path(xdg) / app_name
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / app_name
+    if os.name == "nt":
+        return Path(os.environ.get("APPDATA", Path.home())) / app_name
+    return Path.home() / ".local" / "share" / app_name
 
 
 def app_data_dir() -> Path:
     """Répertoire de données de l'application, créé si nécessaire."""
-    xdg = os.environ.get("XDG_DATA_HOME")
-    if xdg:
-        base = Path(xdg) / APP_NAME
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support" / APP_NAME
-    elif os.name == "nt":
-        base = Path(os.environ.get("APPDATA", Path.home())) / APP_NAME
-    else:
-        base = Path.home() / ".local" / "share" / APP_NAME
+    base = _platform_dir(APP_NAME)
+    if not base.exists():
+        _migrate_legacy(base)
     base.mkdir(parents=True, exist_ok=True)
     return base
+
+
+def _migrate_legacy(base: Path) -> None:
+    """Reprend les données de l'ancien nom : évite de retélécharger les voix."""
+    legacy = _platform_dir(LEGACY_APP_NAME)
+    if not legacy.is_dir():
+        return
+    try:
+        base.parent.mkdir(parents=True, exist_ok=True)
+        legacy.rename(base)
+    except OSError:
+        # Migration impossible : l'appli repart simplement sur un dossier vide.
+        pass
 
 
 def voices_dir() -> Path:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Piper TTS Desktop — synthèse vocale 100 % locale, interface Tkinter.
+"""Souffleur — synthèse vocale 100 % locale (Piper), interface Tkinter.
 
 Lancement :
     pip install -r requirements.txt
@@ -38,14 +38,15 @@ from tts_engine import (
     write_wav,
 )
 
-WINDOW_TITLE = "Piper TTS — synthèse vocale locale"
+APP_TITLE = "Souffleur"
+WINDOW_TITLE = f"{APP_TITLE} — synthèse vocale locale"
 PLACEHOLDER = (
     "Collez ou tapez votre texte ici, puis cliquez sur « Lire ».\n\n"
     "Les textes longs sont découpés automatiquement en phrases et joués à la suite."
 )
 
 
-class PiperApp(ttk.Frame):
+class SouffleurApp(ttk.Frame):
     """Fenêtre principale."""
 
     def __init__(self, master: tk.Tk) -> None:
@@ -423,15 +424,15 @@ class PiperApp(ttk.Frame):
         self.progress.stop()
         self.progress.configure(mode="determinate", value=0)
         self._set_status("Erreur.")
-        messagebox.showerror("Piper TTS", message)
+        messagebox.showerror(APP_TITLE, message)
 
 
 def main() -> int:
     root = tk.Tk()
     try:
-        PiperApp(root)
+        SouffleurApp(root)
     except Exception as exc:  # erreur de démarrage : on prévient proprement
-        messagebox.showerror("Piper TTS", f"Démarrage impossible : {exc}")
+        messagebox.showerror(APP_TITLE, f"Démarrage impossible : {exc}")
         return 1
     root.mainloop()
     return 0

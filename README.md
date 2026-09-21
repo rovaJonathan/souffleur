@@ -1,7 +1,9 @@
-# Piper TTS Desktop
+# Souffleur
+
+Comme au théâtre : il lit votre texte à voix haute, et rien ne sort de la salle.
 
 Petite application de bureau (Tkinter) pour faire parler du texte **en local**,
-avec [Piper TTS](https://github.com/rhasspy/piper). Aucune donnée ne sort de la
+avec [Piper TTS](https://github.com/rhasspy/piper). Aucune donnée ne quitte la
 machine : seul le premier téléchargement d'un modèle de voix utilise le réseau.
 
 ## Installation
@@ -70,4 +72,6 @@ Les modèles proviennent de [`rhasspy/piper-voices`](https://huggingface.co/rhas
 
 Les modèles et les préférences sont stockés dans le répertoire de données
 standard de la plateforme, par exemple
-`~/Library/Application Support/piper-tts-gui/` sous macOS.
+`~/Library/Application Support/souffleur/` sous macOS. Un ancien répertoire
+`piper-tts-gui/` est repris automatiquement au premier lancement (pas de
+retéléchargement des voix).
