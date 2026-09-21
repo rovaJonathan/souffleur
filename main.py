@@ -79,6 +79,7 @@ class SouffleurApp(ttk.Frame):
         self.player = AudioPlayer()
         self.settings = Settings.load()
         self._busy = False  # une tâche longue est en cours
+        self._live_speed = DEFAULT_SPEED  # vitesse courante, lue par le thread de synthèse
         self._segment_status = ""  # dernier statut de progression, restauré après une pause
         self._alive = True
         # File des mises à jour d'interface demandées par les threads de travail.
@@ -259,9 +260,14 @@ class SouffleurApp(ttk.Frame):
         return scale
 
     def _show_speed(self) -> None:
-        self.speed_value_var.set(f"{self.speed_var.get():.2f} ×")
+        # Copie vers un simple float : le thread de synthèse le lit avant chaque
+        # segment, sans jamais toucher à une variable Tkinter.
+        self._live_speed = self.speed_var.get()
+        self.speed_value_var.set(f"{self._live_speed:.2f} ×")
 
     def _show_volume(self) -> None:
+        # Le lecteur applique le gain bloc par bloc : effet quasi immédiat.
+        self.player.volume = self.volume_var.get()
         self.volume_value_var.set(f"{round(self.volume_var.get() * 100)} %")
 
     def _on_speed_released(self) -> None:
@@ -492,11 +498,13 @@ class SouffleurApp(ttk.Frame):
 
     def _start_play(self, text: str, key: str) -> None:
         segments = segment_text(text)
-        # Réglages lus ici, sur le thread Tkinter : le worker ne touche à aucun
-        # widget. Ils valent donc pour toute la lecture, d'où des curseurs gelés.
-        speed, volume = self.speed_var.get(), self.volume_var.get()
+        # Réglages « live » : la vitesse est relue par le moteur avant chaque
+        # segment (via `_live_speed`), le volume appliqué par le lecteur à
+        # chaque bloc. Piper synthétise donc à volume plein.
         self.player.reset()  # réarmé ici, avant tout risque de clic « Arrêter »
-        self._set_busy(True, stop_enabled=True, lock_text=True, pause_enabled=True)
+        self._set_busy(
+            True, stop_enabled=True, lock_text=True, pause_enabled=True, live_controls=True
+        )
         self.progress.configure(mode="indeterminate")
         self.progress.start(15)
         self._set_status("Chargement de la voix…")
@@ -507,8 +515,8 @@ class SouffleurApp(ttk.Frame):
                     key,
                     segments,
                     stop_event=self.player.stop_event,
-                    speed=speed,
-                    volume=volume,
+                    speed=lambda: self._live_speed,
+                    volume=DEFAULT_VOLUME,
                 )
                 # prefetch : la synthèse du segment suivant tourne pendant la
                 # lecture du segment courant, d'où un enchaînement sans blanc.
@@ -650,6 +658,7 @@ class SouffleurApp(ttk.Frame):
         stop_enabled: bool = False,
         lock_text: bool = False,
         pause_enabled: bool = False,
+        live_controls: bool = False,
     ) -> None:
         self._busy = busy
         self.pause_button.configure(
@@ -659,10 +668,11 @@ class SouffleurApp(ttk.Frame):
         self.play_button.configure(state=normal_state)
         self.export_button.configure(state=normal_state)
         self.voice_combo.configure(state="disabled" if busy else "readonly")
-        # Curseurs gelés pendant le travail : la vitesse et le volume sont figés
-        # dans l'audio au moment de la synthèse, les bouger ne changerait rien.
-        self.speed_scale.configure(state=normal_state)
-        self.volume_scale.configure(state=normal_state)
+        # Curseurs actifs pendant la lecture (réglages relus en continu), mais
+        # gelés pendant l'export : là, le réglage est figé dans le WAV généré.
+        controls_state = "normal" if (not busy or live_controls) else "disabled"
+        self.speed_scale.configure(state=controls_state)
+        self.volume_scale.configure(state=controls_state)
         self.stop_button.configure(state="normal" if (busy and stop_enabled) else "disabled")
         # Texte verrouillé pendant lecture/export : une modification décalerait
         # le surlignage par rapport aux positions calculées au départ.

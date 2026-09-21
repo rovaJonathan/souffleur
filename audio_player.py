@@ -41,8 +41,20 @@ class AudioPlayer:
         # dessus sans boucle active, et `stop()` le lève pour le débloquer.
         self._running = threading.Event()
         self._running.set()
+        # Gain appliqué à chaque bloc juste avant l'écriture. Modifiable depuis
+        # le thread UI en pleine lecture : l'affectation d'un float est atomique,
+        # et le thread de lecture le relit à chaque bloc (~100 ms).
+        self._volume = 1.0
 
     # -- état ------------------------------------------------------------- #
+
+    @property
+    def volume(self) -> float:
+        return self._volume
+
+    @volume.setter
+    def volume(self, value: float) -> None:
+        self._volume = max(0.0, min(1.0, float(value)))
 
     @property
     def stopped(self) -> bool:
@@ -94,10 +106,17 @@ class AudioPlayer:
             try:
                 # Bloque le temps que le bloc soit consommé : régule
                 # naturellement la génération, sans consommer de CPU.
-                self._stream.write(block[start : start + BLOCK_SAMPLES])
+                self._stream.write(self._apply_volume(block[start : start + BLOCK_SAMPLES]))
             except sd.PortAudioError:
                 return False
         return True
+
+    def _apply_volume(self, block: np.ndarray) -> np.ndarray:
+        """Atténue un bloc selon le volume courant (gain ≤ 1 : pas d'écrêtage)."""
+        gain = self._volume
+        if gain >= 1.0:
+            return block
+        return (block.astype(np.float32) * gain).astype(np.int16)
 
     def _wait_if_paused(self) -> bool:
         """Bloque tant que la lecture est en pause. Retourne False si arrêt demandé.
