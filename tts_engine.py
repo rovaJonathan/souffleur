@@ -17,7 +17,7 @@ import urllib.request
 import wave
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Iterator, List, Optional, Tuple, Union
+from typing import Callable, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 from piper import PiperVoice, SynthesisConfig
@@ -440,22 +440,51 @@ def _silence(sample_rate: int, milliseconds: int) -> np.ndarray:
     return np.zeros(int(sample_rate * milliseconds / 1000), dtype=np.int16)
 
 
-def write_wav(path: str | Path, sample_rate: int, samples: np.ndarray) -> None:
-    """Écrit un WAV mono 16 bits (format natif de Piper)."""
-    with wave.open(str(path), "wb") as wav_file:
-        wav_file.setnchannels(1)
-        wav_file.setsampwidth(2)
-        wav_file.setframerate(sample_rate)
-        wav_file.writeframes(samples.astype(np.int16).tobytes())
+class WavWriter:
+    """Écrit un WAV mono 16 bits (format natif de Piper) chunk par chunk.
 
+    Gestionnaire de contexte : rien n'est gardé en mémoire, une heure d'audio
+    s'écrit avec la même empreinte qu'une phrase. Le fichier est d'abord écrit
+    sous `<nom>.part` puis renommé à la sortie : un export interrompu (arrêt,
+    erreur) ne laisse jamais un WAV tronqué sous le nom final. Appeler
+    `discard()` pour abandonner volontairement ; le `.part` est alors
+    supprimé. Si aucun chunk n'a été écrit, aucun fichier n'est créé.
 
-def concatenate(chunks: Iterable[AudioChunkTuple]) -> Tuple[int, np.ndarray]:
-    """Assemble des chunks en un seul tableau (utilisé pour l'export WAV)."""
-    sample_rate = 0
-    parts: List[np.ndarray] = []
-    for rate, samples in chunks:
-        sample_rate = rate
-        parts.append(samples)
-    if not parts:
-        return 0, np.zeros(0, dtype=np.int16)
-    return sample_rate, np.concatenate(parts)
+        with WavWriter(path) as wav:
+            for chunk in engine.synthesize_text(...):
+                wav.write(chunk)
+        print(wav.frames)  # échantillons écrits, 0 si rien
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self.part_path = self.path.with_name(self.path.name + ".part")
+        self.frames = 0
+        self._wav: Optional[wave.Wave_write] = None
+        self._discarded = False
+
+    def write(self, chunk: AudioChunkTuple) -> None:
+        sample_rate, samples = chunk
+        if self._wav is None:
+            # Ouvert au premier chunk : le WAV a besoin de la fréquence en tête.
+            self._wav = wave.open(str(self.part_path), "wb")
+            self._wav.setnchannels(1)
+            self._wav.setsampwidth(2)
+            self._wav.setframerate(sample_rate)
+        self._wav.writeframes(samples.astype(np.int16).tobytes())
+        self.frames += len(samples)
+
+    def discard(self) -> None:
+        """Abandonne l'export : le fichier partiel sera supprimé à la sortie."""
+        self._discarded = True
+
+    def __enter__(self) -> "WavWriter":
+        return self
+
+    def __exit__(self, exc_type, _exc, _tb) -> None:
+        if self._wav is not None:
+            self._wav.close()
+        if exc_type is not None or self._discarded or self.frames == 0:
+            self.part_path.unlink(missing_ok=True)
+            return
+        self.part_path.replace(self.path)  # atomique, écrase un ancien fichier

@@ -69,7 +69,8 @@ Fichiers : `main.py`. Taille : ~30 lignes.
 
 ## 5. Export WAV en streaming
 
-- [ ] Écrire le WAV chunk par chunk au lieu de tout concaténer en mémoire.
+- [x] Écrire le WAV chunk par chunk au lieu de tout concaténer en mémoire.
+      (branche `feat/export-flux`, classe `WavWriter`)
 
 **Pourquoi** : 1 h d'audio ≈ 160 Mo en RAM aujourd'hui. Cas rare, mais
 l'écriture en flux est simple et libère `concatenate()`.
