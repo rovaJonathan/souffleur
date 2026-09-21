@@ -283,6 +283,7 @@ class SouffleurApp(ttk.Frame):
             key = DEFAULT_VOICE
         self.voice_var.set(VOICES_BY_KEY[key].label)
         self._refresh_voice_state()
+        self._warm_up_voice(key)
 
         self.speed_var.set(self._stored_number("speed", DEFAULT_SPEED, SPEED_MIN, SPEED_MAX))
         self.volume_var.set(
@@ -307,8 +308,10 @@ class SouffleurApp(ttk.Frame):
         return DEFAULT_VOICE
 
     def _on_voice_selected(self, _event: object = None) -> None:
-        self.settings.set("voice", self.current_voice_key())
+        key = self.current_voice_key()
+        self.settings.set("voice", key)
         self._refresh_voice_state()
+        self._warm_up_voice(key)
 
     def _refresh_voice_state(self) -> None:
         key = self.current_voice_key()
@@ -316,6 +319,27 @@ class SouffleurApp(ttk.Frame):
             self.voice_state_var.set("● modèle installé")
         else:
             self.voice_state_var.set("○ modèle à télécharger")
+
+    def _warm_up_voice(self, key: str) -> None:
+        """Charge le modèle en arrière-plan pour que « Lire » démarre sans délai.
+
+        Le premier chargement coûte ~0,7 s ; fait ici, au démarrage ou au choix
+        d'une voix déjà téléchargée, il est terminé bien avant le clic.
+        `PiperEngine.load` met en cache et est protégé par un verrou : si
+        « Lire » arrive pendant le chargement, il attend simplement la fin.
+        Toute erreur est ignorée : le vrai chemin d'erreur reste celui de la
+        lecture, qui recharge et la signale.
+        """
+        if not is_voice_available(key):
+            return
+
+        def worker() -> None:
+            try:
+                self.engine.load(key)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, name="voice-warmup", daemon=True).start()
 
     # ------------------------------------------------------------ actions --
 

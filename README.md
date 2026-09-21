@@ -74,6 +74,11 @@ produit. Le fichier `MODEL_CARD` de chaque voix, sur Hugging Face, fait foi.
   carte son, qui demande le surlignage. Il suit ainsi l'audio réellement joué,
   et non la génération qui a plusieurs secondes d'avance. Le texte est
   verrouillé pendant la lecture pour que les positions restent valables.
+- **Préchauffage de la voix** : le modèle sélectionné est chargé dans un thread
+  de fond dès le démarrage et à chaque changement de voix (s'il est déjà
+  téléchargé). Le premier « Lire » ne paie donc plus les ~0,7 s de chargement.
+  `PiperEngine.load` est verrouillé et mis en cache : si le clic arrive
+  pendant le chargement, il attend simplement la fin.
 - **Pas de blanc entre segments** : `prefetch()` génère le segment suivant dans
   un thread pendant que le courant est joué, via une file bornée (mémoire
   constante).

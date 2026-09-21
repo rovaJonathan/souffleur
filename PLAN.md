@@ -28,8 +28,8 @@ Fichiers : `tts_engine.py`, `main.py`. Taille : ~60 lignes.
 
 ## 2. Préchauffage de la voix
 
-- [ ] Charger le modèle en thread de fond au démarrage et à chaque changement de
-      voix (si déjà téléchargée).
+- [x] Charger le modèle en thread de fond au démarrage et à chaque changement de
+      voix (si déjà téléchargée). (branche `feat/prechauffage-voix`)
 
 **Pourquoi** : le premier « Lire » paie 0,67 s de chargement. Préchauffé, la
 latence perçue tombe à ~70 ms.
