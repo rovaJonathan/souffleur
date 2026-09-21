@@ -28,10 +28,14 @@ Sous Linux, `sounddevice` a besoin de PortAudio : `sudo apt install libportaudio
    en cours de lecture est surligné dans le texte, qui défile tout seul.
    Si le modèle manque, l'application propose de le télécharger (barre de
    progression), puis enchaîne toute seule sur la lecture.
-5. **■ Arrêter** — coupe la lecture *et* la génération en cours (< 100 ms).
-6. **⬇ Exporter en WAV** — écrit tout le texte dans un fichier mono 16 bits.
+5. **⏸ Pause** / **▶ Reprendre** — suspend la lecture au bloc suivant (~100 ms)
+   et la reprend exactement où elle en était.
+6. **■ Arrêter** — coupe la lecture *et* la génération en cours (< 100 ms),
+   même en pause.
+7. **⬇ Exporter en WAV** — écrit tout le texte dans un fichier mono 16 bits.
 
-Raccourcis : `Ctrl+Entrée` pour lire, `Échap` pour arrêter.
+Raccourcis : `Ctrl+Entrée` pour lire, `Espace` pour pause / reprise (pendant
+la lecture), `Échap` pour arrêter.
 
 ## Voix incluses au catalogue
 
@@ -93,6 +97,11 @@ produit. Le fichier `MODEL_CARD` de chaque voix, sur Hugging Face, fait foi.
   génération et la lecture. Le flux PortAudio n'est manipulé que par le thread
   de lecture (un `abort()` concurrent d'un `write()` bloquant peut figer le
   processus).
+- **Pause** : un second événement, « lecture en cours », est testé par le
+  thread de lecture entre deux blocs. Baissé, le thread attend dessus sans
+  consommer de CPU ; le flux PortAudio reste ouvert et joue du silence, la file
+  de préchargement reste pleine, la reprise est donc instantanée. `stop()` lève
+  aussi cet événement pour débloquer une lecture en pause.
 - **Thread ↔ Tkinter** : les threads de travail ne touchent jamais un widget ;
   ils empilent des callbacks dans une file vidée par `_pump()` côté Tkinter
   (sous Tk 9, un `after()` appelé depuis un autre thread n'est jamais exécuté).

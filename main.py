@@ -57,6 +57,9 @@ VOLUME_STEP = 0.05
 """Pas de quantification des curseurs, appliqué au relâchement : un réglage
 lisible (« 1,25 × ») et stable d'une session à l'autre."""
 
+PAUSE_LABEL = "⏸  Pause"
+RESUME_LABEL = "▶  Reprendre"
+
 CURRENT_TAG = "current"
 CURRENT_BACKGROUND = "#fff1a8"
 CURRENT_FOREGROUND = "#1a1a1a"
@@ -76,6 +79,7 @@ class SouffleurApp(ttk.Frame):
         self.player = AudioPlayer()
         self.settings = Settings.load()
         self._busy = False  # une tâche longue est en cours
+        self._segment_status = ""  # dernier statut de progression, restauré après une pause
         self._alive = True
         # File des mises à jour d'interface demandées par les threads de travail.
         self._ui_queue: "queue.Queue[tuple[Callable, tuple]]" = queue.Queue()
@@ -183,23 +187,28 @@ class SouffleurApp(ttk.Frame):
         # --- Boutons ----------------------------------------------------- #
         buttons = ttk.Frame(self)
         buttons.grid(row=3, column=0, sticky="ew", pady=(10, 6))
-        buttons.columnconfigure(3, weight=1)
+        buttons.columnconfigure(4, weight=1)
 
         self.play_button = ttk.Button(buttons, text="▶  Lire", command=self.on_play)
         self.play_button.grid(row=0, column=0)
 
+        self.pause_button = ttk.Button(
+            buttons, text=PAUSE_LABEL, command=self.on_pause, state="disabled"
+        )
+        self.pause_button.grid(row=0, column=1, padx=(6, 0))
+
         self.stop_button = ttk.Button(
             buttons, text="■  Arrêter", command=self.on_stop, state="disabled"
         )
-        self.stop_button.grid(row=0, column=1, padx=6)
+        self.stop_button.grid(row=0, column=2, padx=6)
 
         self.export_button = ttk.Button(
             buttons, text="⬇  Exporter en WAV", command=self.on_export
         )
-        self.export_button.grid(row=0, column=2)
+        self.export_button.grid(row=0, column=3)
 
         ttk.Button(buttons, text="Effacer", command=self.on_clear).grid(
-            row=0, column=4, sticky="e"
+            row=0, column=5, sticky="e"
         )
 
         # --- Progression + statut ---------------------------------------- #
@@ -214,6 +223,7 @@ class SouffleurApp(ttk.Frame):
         # --- Raccourcis clavier ------------------------------------------- #
         self.master.bind("<Control-Return>", lambda _event: self.on_play())
         self.master.bind("<Escape>", lambda _event: self.on_stop())
+        self.master.bind("<space>", self._on_space)
         self.master.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def _build_slider(
@@ -349,6 +359,32 @@ class SouffleurApp(ttk.Frame):
     def on_export(self) -> None:
         self._run_action("export")
 
+    def on_pause(self) -> None:
+        """Bascule pause / reprise de la lecture (sans effet hors lecture)."""
+        if str(self.pause_button.cget("state")) == "disabled":
+            return
+        if self.player.toggle_pause():
+            self.pause_button.configure(text=RESUME_LABEL)
+            self._set_status("En pause.")
+        else:
+            self.pause_button.configure(text=PAUSE_LABEL)
+            self._set_status(self._segment_status)
+
+    def _on_space(self, _event: object = None) -> Optional[str]:
+        """`Espace` = pause/reprise, sauf si la touche a déjà un sens ailleurs.
+
+        Dans la zone de texte, elle saisit une espace (hors lecture : le texte
+        est verrouillé pendant celle-ci). Sur un bouton, elle l'actionne déjà :
+        ne pas basculer une seconde fois.
+        """
+        focus = self.master.focus_get()
+        if isinstance(focus, ttk.Button):
+            return None
+        if focus is self.text and str(self.text.cget("state")) == "normal":
+            return None
+        self.on_pause()
+        return "break"
+
     def on_stop(self) -> None:
         """Interrompt lecture ou export : le drapeau coupe aussi la génération."""
         if not self._busy:
@@ -460,7 +496,7 @@ class SouffleurApp(ttk.Frame):
         # widget. Ils valent donc pour toute la lecture, d'où des curseurs gelés.
         speed, volume = self.speed_var.get(), self.volume_var.get()
         self.player.reset()  # réarmé ici, avant tout risque de clic « Arrêter »
-        self._set_busy(True, stop_enabled=True, lock_text=True)
+        self._set_busy(True, stop_enabled=True, lock_text=True, pause_enabled=True)
         self.progress.configure(mode="indeterminate")
         self.progress.start(15)
         self._set_status("Chargement de la voix…")
@@ -511,7 +547,11 @@ class SouffleurApp(ttk.Frame):
         self._ui(self._show_segment, "Génération", index, total, segment)
 
     def _show_segment(self, verb: str, index: int, total: int, segment: Segment) -> None:
-        self._set_status(f"{verb} — segment {index + 1}/{total}")
+        self._segment_status = f"{verb} — segment {index + 1}/{total}"
+        # En pause, le statut « En pause. » reste ; le chunk déjà en file peut
+        # encore déclencher un changement de segment juste après le clic.
+        if not self.player.paused:
+            self._set_status(self._segment_status)
         self._highlight(segment)
         # En lecture la barre est en mode « animation » : on ne la pilote pas.
         if str(self.progress.cget("mode")) == "determinate":
@@ -605,9 +645,16 @@ class SouffleurApp(ttk.Frame):
         self.status_var.set(message)
 
     def _set_busy(
-        self, busy: bool, stop_enabled: bool = False, lock_text: bool = False
+        self,
+        busy: bool,
+        stop_enabled: bool = False,
+        lock_text: bool = False,
+        pause_enabled: bool = False,
     ) -> None:
         self._busy = busy
+        self.pause_button.configure(
+            text=PAUSE_LABEL, state="normal" if (busy and pause_enabled) else "disabled"
+        )
         normal_state = "disabled" if busy else "normal"
         self.play_button.configure(state=normal_state)
         self.export_button.configure(state=normal_state)
