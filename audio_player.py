@@ -8,7 +8,8 @@ deux threads à la fois (un `abort()` pendant un `write()` bloquant peut figer l
 processus). Donc **seul le thread de lecture touche le flux** ; `stop()`, lui,
 se contente de lever un drapeau. Le thread de lecture écrit par petits blocs et
 teste ce drapeau entre chaque bloc : l'arrêt est perçu comme immédiat
-(~1 bloc, soit moins de 100 ms) sans aucun appel concurrent.
+(~1 bloc, soit moins de 100 ms) sans aucun appel concurrent. La pause suit la
+même logique : un événement testé entre deux blocs, jamais d'appel sur le flux.
 """
 
 from __future__ import annotations
@@ -35,6 +36,11 @@ class AudioPlayer:
         self._stream: Optional[sd.OutputStream] = None
         self._sample_rate: Optional[int] = None
         self._stop_event = threading.Event()
+        # Levé = lecture en cours, baissé = en pause. Un événement « positif »
+        # plutôt qu'un drapeau de pause : le thread de lecture peut attendre
+        # dessus sans boucle active, et `stop()` le lève pour le débloquer.
+        self._running = threading.Event()
+        self._running.set()
 
     # -- état ------------------------------------------------------------- #
 
@@ -43,17 +49,22 @@ class AudioPlayer:
         return self._stop_event.is_set()
 
     @property
+    def paused(self) -> bool:
+        return not self._running.is_set()
+
+    @property
     def stop_event(self) -> threading.Event:
         """Partagé avec le moteur TTS pour interrompre aussi la génération."""
         return self._stop_event
 
     def reset(self) -> None:
-        """Réarme le drapeau d'arrêt avant une nouvelle lecture.
+        """Réarme les drapeaux d'arrêt et de pause avant une nouvelle lecture.
 
         Appelé depuis le thread UI *avant* de démarrer le thread de travail :
         un clic sur « Arrêter » ne peut donc jamais être effacé après coup.
         """
         self._stop_event.clear()
+        self._running.set()
 
     # -- lecture ----------------------------------------------------------- #
 
@@ -78,7 +89,7 @@ class AudioPlayer:
         """Écrit un chunk par petits blocs. Retourne False si l'arrêt est demandé."""
         block = np.ascontiguousarray(samples, dtype=np.int16)
         for start in range(0, block.size, BLOCK_SAMPLES):
-            if self._stop_event.is_set():
+            if not self._wait_if_paused():
                 return False
             try:
                 # Bloque le temps que le bloc soit consommé : régule
@@ -88,13 +99,41 @@ class AudioPlayer:
                 return False
         return True
 
+    def _wait_if_paused(self) -> bool:
+        """Bloque tant que la lecture est en pause. Retourne False si arrêt demandé.
+
+        Le flux PortAudio reste ouvert : privé d'écriture, il joue du silence.
+        La file de préchargement reste pleine, la reprise est donc immédiate.
+        """
+        while not self._running.wait(0.2):
+            if self._stop_event.is_set():
+                return False
+        return not self._stop_event.is_set()
+
+    def pause(self) -> None:
+        """Suspend la lecture au prochain bloc (~100 ms). Sans effet si arrêtée."""
+        self._running.clear()
+
+    def resume(self) -> None:
+        self._running.set()
+
+    def toggle_pause(self) -> bool:
+        """Bascule pause/lecture et retourne le nouvel état `paused`."""
+        if self.paused:
+            self.resume()
+        else:
+            self.pause()
+        return self.paused
+
     def stop(self) -> None:
         """Interrompt la lecture (appelable depuis le thread Tkinter).
 
         Ne touche volontairement pas au flux PortAudio : c'est le thread de
-        lecture qui le fermera, lui seul.
+        lecture qui le fermera, lui seul. Débloque aussi une lecture en pause,
+        qui voit alors le drapeau d'arrêt.
         """
         self._stop_event.set()
+        self._running.set()
 
     # -- interne ------------------------------------------------------------ #
 

@@ -43,7 +43,8 @@ Fichiers : `main.py`. Taille : ~10 lignes.
 
 ## 3. Pause / reprise
 
-- [ ] Bouton ⏸ / ▶ pendant la lecture, raccourci `Espace` (hors zone de texte).
+- [x] Bouton ⏸ / ▶ pendant la lecture, raccourci `Espace` (hors zone de texte).
+      (branche `feat/pause-reprise`)
 
 **Comment** : second `threading.Event` (`pause_event`) dans `AudioPlayer`,
 testé dans `_write_chunk` entre deux blocs (attente active courte avec
