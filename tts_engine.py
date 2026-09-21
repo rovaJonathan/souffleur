@@ -238,6 +238,34 @@ SEGMENT_GAP_MS = 120
 
 AudioChunkTuple = Tuple[int, np.ndarray]  # (fréquence d'échantillonnage, int16 mono)
 
+SPEED_MIN, SPEED_MAX = 0.5, 2.0
+DEFAULT_SPEED = 1.0
+"""Vitesse de lecture, en multiple de la cadence naturelle de la voix."""
+
+VOLUME_MIN, VOLUME_MAX = 0.0, 1.0
+DEFAULT_VOLUME = 1.0
+"""Volume entre 0 et 1. Piper normalise l'audio avant d'appliquer ce facteur,
+puis écrête à ±1 : monter au-dessus de 1 ne ferait que saturer."""
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def synthesis_config(
+    voice: PiperVoice, speed: float = DEFAULT_SPEED, volume: float = DEFAULT_VOLUME
+) -> SynthesisConfig:
+    """Traduit vitesse/volume en réglages Piper pour une voix donnée.
+
+    Piper raisonne en `length_scale`, une *durée* : plus elle est grande, plus
+    la voix est lente — d'où l'inverse. Le facteur est appliqué relativement au
+    réglage du modèle, qui vaut souvent 1 mais n'y est pas tenu.
+    """
+    return SynthesisConfig(
+        length_scale=voice.config.length_scale / _clamp(speed, SPEED_MIN, SPEED_MAX),
+        volume=_clamp(volume, VOLUME_MIN, VOLUME_MAX),
+    )
+
 
 class PiperEngine:
     """Charge les voix Piper (avec cache) et produit de l'audio PCM 16 bits."""
@@ -275,14 +303,20 @@ class PiperEngine:
         text: str,
         stop_event: Optional[threading.Event] = None,
         on_segment: Optional[Callable[[int, int, str], None]] = None,
-        syn_config: Optional[SynthesisConfig] = None,
+        speed: float = DEFAULT_SPEED,
+        volume: float = DEFAULT_VOLUME,
     ) -> Iterator[AudioChunkTuple]:
         """Génère l'audio de tout le texte, segment par segment, en streaming.
 
         `on_segment(index, total, segment)` est appelé avant chaque segment, ce
         qui permet à l'interface d'afficher une progression réelle.
         `stop_event` est vérifié entre chaque chunk : l'arrêt est quasi immédiat.
+
+        La voix est chargée ici (et non par l'appelant) : c'est un générateur,
+        donc le chargement — une seconde environ — a lieu dans le thread qui
+        consomme, jamais dans celui de l'interface.
         """
+        syn_config = synthesis_config(self.load(key), speed, volume)
         segments = split_text(text)
         total = len(segments)
         sample_rate: Optional[int] = None
