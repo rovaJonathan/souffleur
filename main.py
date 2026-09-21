@@ -51,6 +51,11 @@ from tts_engine import (
 
 APP_TITLE = "Souffleur"
 WINDOW_TITLE = f"{APP_TITLE} — synthèse vocale locale"
+
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+ICON_PNG_SIZES = (16, 32, 64, 128, 256, 512)
+"""Tailles d'icône fournies à Tk (voir build_icons.py) : le gestionnaire de
+fenêtres choisit la plus adaptée à la barre de titre, au Dock ou à Alt-Tab."""
 PLACEHOLDER = (
     "Collez ou tapez votre texte ici, puis cliquez sur « Lire ».\n\n"
     "Les textes longs sont découpés automatiquement en phrases et joués à la suite."
@@ -776,8 +781,37 @@ def _snap(value: float, step: float, low: float, high: float) -> float:
     return round(round(min(max(value, low), high) / step) * step, 4)
 
 
+def apply_app_icon(root: tk.Tk) -> None:
+    """Affiche le logo comme icône de fenêtre (et du Dock / de la barre des tâches).
+
+    Best effort : une icône manquante ou un Tk sans support PNG ne doit
+    jamais empêcher l'application de démarrer.
+    """
+    images = []
+    for size in ICON_PNG_SIZES:
+        path = ASSETS_DIR / f"icon-{size}.png"
+        if not path.exists():
+            continue
+        try:
+            images.append(tk.PhotoImage(master=root, file=str(path)))
+        except tk.TclError:
+            continue
+    if images:
+        root.iconphoto(True, *images)
+        root._souffleur_icons = images  # type: ignore[attr-defined]  # évite la collecte par le GC
+
+    if sys.platform == "win32":
+        ico = ASSETS_DIR / "icon.ico"
+        if ico.exists():
+            try:
+                root.iconbitmap(default=str(ico))
+            except tk.TclError:
+                pass
+
+
 def main() -> int:
     root = tk.Tk()
+    apply_app_icon(root)
     try:
         SouffleurApp(root)
     except Exception as exc:  # erreur de démarrage : on prévient proprement
