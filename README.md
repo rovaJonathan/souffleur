@@ -35,7 +35,10 @@ Sous Linux, `sounddevice` a besoin de PortAudio : `sudo apt install libportaudio
    et la reprend exactement où elle en était.
 6. **■ Arrêter** — coupe la lecture *et* la génération en cours (< 100 ms),
    même en pause.
-7. **⬇ Exporter en WAV** — écrit tout le texte dans un fichier mono 16 bits.
+7. **⬇ Exporter en WAV** — écrit tout le texte dans un fichier mono 16 bits,
+   au fil de la synthèse (mémoire constante, même pour une heure d'audio).
+   Le fichier est écrit sous `.part` puis renommé : un export arrêté ne laisse
+   rien derrière lui.
 
 Raccourcis : `Ctrl+O` (ou `Cmd+O` sur macOS) pour ouvrir un fichier,
 `Ctrl+Entrée` pour lire, `Espace` pour pause / reprise (pendant la lecture),

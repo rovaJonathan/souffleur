@@ -38,11 +38,10 @@ from tts_engine import (
     VOLUME_MIN,
     PiperEngine,
     Segment,
-    concatenate,
+    WavWriter,
     download_voice,
     is_voice_available,
     segment_text,
-    write_wav,
 )
 
 APP_TITLE = "Souffleur"
@@ -638,20 +637,24 @@ class SouffleurApp(ttk.Frame):
 
         def worker() -> None:
             try:
-                sample_rate, samples = concatenate(
-                    self.engine.synthesize_text(
+                # Écriture au fil de l'eau : le fichier grandit pendant la
+                # synthèse, rien n'est accumulé en mémoire. Un arrêt laisse
+                # le `.part` être supprimé par `WavWriter`.
+                with WavWriter(path) as wav:
+                    for chunk in self.engine.synthesize_text(
                         key,
                         text,
                         stop_event=self.player.stop_event,
                         on_segment=self._on_segment_progress,
                         speed=speed,
                         volume=volume,
-                    )
-                )
-                if self.player.stopped or samples.size == 0:
+                    ):
+                        wav.write(chunk)
+                    if self.player.stopped:
+                        wav.discard()
+                if self.player.stopped or wav.frames == 0:
                     self._ui(self._on_export_done, None)
                     return
-                write_wav(path, sample_rate, samples)
             except Exception as exc:
                 self._ui(self._on_error, f"Export impossible : {exc}")
                 return
