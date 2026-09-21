@@ -27,9 +27,15 @@ from typing import Callable, Optional
 from audio_player import AudioPlayer, prefetch
 from settings import Settings, voices_dir
 from tts_engine import (
+    DEFAULT_SPEED,
     DEFAULT_VOICE,
+    DEFAULT_VOLUME,
+    SPEED_MAX,
+    SPEED_MIN,
     VOICES,
     VOICES_BY_KEY,
+    VOLUME_MAX,
+    VOLUME_MIN,
     PiperEngine,
     concatenate,
     download_voice,
@@ -44,6 +50,11 @@ PLACEHOLDER = (
     "Collez ou tapez votre texte ici, puis cliquez sur « Lire ».\n\n"
     "Les textes longs sont découpés automatiquement en phrases et joués à la suite."
 )
+
+SPEED_STEP = 0.05
+VOLUME_STEP = 0.05
+"""Pas de quantification des curseurs, appliqué au relâchement : un réglage
+lisible (« 1,25 × ») et stable d'une session à l'autre."""
 
 
 class SouffleurApp(ttk.Frame):
@@ -62,7 +73,7 @@ class SouffleurApp(ttk.Frame):
         self._ui_queue: "queue.Queue[tuple[Callable, tuple]]" = queue.Queue()
 
         self._build_ui()
-        self._restore_voice()
+        self._restore_preferences()
         self.grid(row=0, column=0, sticky="nsew")
         self._pump()  # démarre la boucle de traitement de la file
 
@@ -125,9 +136,42 @@ class SouffleurApp(ttk.Frame):
         self.text.bind("<FocusIn>", self._clear_placeholder, add="+")
         self.text.bind("<Key>", self._clear_placeholder, add="+")
 
+        # --- Vitesse et volume -------------------------------------------- #
+        controls = ttk.Frame(self)
+        controls.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        controls.columnconfigure(1, weight=1)
+        controls.columnconfigure(4, weight=1)
+
+        self.speed_var = tk.DoubleVar(value=DEFAULT_SPEED)
+        self.speed_value_var = tk.StringVar()
+        self.speed_scale = self._build_slider(
+            controls,
+            column=0,
+            text="Vitesse :",
+            variable=self.speed_var,
+            value_var=self.speed_value_var,
+            bounds=(SPEED_MIN, SPEED_MAX),
+            on_release=self._on_speed_released,
+            on_move=self._show_speed,
+        )
+
+        self.volume_var = tk.DoubleVar(value=DEFAULT_VOLUME)
+        self.volume_value_var = tk.StringVar()
+        self.volume_scale = self._build_slider(
+            controls,
+            column=3,
+            text="Volume :",
+            variable=self.volume_var,
+            value_var=self.volume_value_var,
+            bounds=(VOLUME_MIN, VOLUME_MAX),
+            on_release=self._on_volume_released,
+            on_move=self._show_volume,
+            padx=(20, 8),
+        )
+
         # --- Boutons ----------------------------------------------------- #
         buttons = ttk.Frame(self)
-        buttons.grid(row=2, column=0, sticky="ew", pady=(10, 6))
+        buttons.grid(row=3, column=0, sticky="ew", pady=(10, 6))
         buttons.columnconfigure(3, weight=1)
 
         self.play_button = ttk.Button(buttons, text="▶  Lire", command=self.on_play)
@@ -149,17 +193,67 @@ class SouffleurApp(ttk.Frame):
 
         # --- Progression + statut ---------------------------------------- #
         self.progress = ttk.Progressbar(self, mode="determinate", maximum=100)
-        self.progress.grid(row=3, column=0, sticky="ew")
+        self.progress.grid(row=4, column=0, sticky="ew")
 
         self.status_var = tk.StringVar(value="Prêt.")
         ttk.Label(self, textvariable=self.status_var, foreground="gray30").grid(
-            row=4, column=0, sticky="w", pady=(6, 0)
+            row=5, column=0, sticky="w", pady=(6, 0)
         )
 
         # --- Raccourcis clavier ------------------------------------------- #
         self.master.bind("<Control-Return>", lambda _event: self.on_play())
         self.master.bind("<Escape>", lambda _event: self.on_stop())
         self.master.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def _build_slider(
+        self,
+        parent: ttk.Frame,
+        column: int,
+        text: str,
+        variable: tk.DoubleVar,
+        value_var: tk.StringVar,
+        bounds: tuple[float, float],
+        on_release: Callable[[], None],
+        on_move: Callable[[], None],
+        padx: tuple[int, int] = (0, 8),
+    ) -> ttk.Scale:
+        """Libellé + curseur + valeur affichée, sur trois colonnes consécutives."""
+        ttk.Label(parent, text=text).grid(row=0, column=column, padx=padx)
+
+        scale = ttk.Scale(
+            parent,
+            from_=bounds[0],
+            to=bounds[1],
+            variable=variable,
+            command=lambda _value: on_move(),
+        )
+        scale.grid(row=0, column=column + 1, sticky="ew")
+        # Le réglage n'est enregistré qu'au relâchement : inutile de réécrire le
+        # fichier de préférences à chaque pixel parcouru par le curseur.
+        scale.bind("<ButtonRelease-1>", lambda _event: on_release())
+
+        ttk.Label(parent, textvariable=value_var, width=6, anchor="e").grid(
+            row=0, column=column + 2, padx=(8, 0)
+        )
+        return scale
+
+    def _show_speed(self) -> None:
+        self.speed_value_var.set(f"{self.speed_var.get():.2f} ×")
+
+    def _show_volume(self) -> None:
+        self.volume_value_var.set(f"{round(self.volume_var.get() * 100)} %")
+
+    def _on_speed_released(self) -> None:
+        value = _snap(self.speed_var.get(), SPEED_STEP, SPEED_MIN, SPEED_MAX)
+        self.speed_var.set(value)
+        self._show_speed()
+        self.settings.set("speed", value)
+
+    def _on_volume_released(self) -> None:
+        value = _snap(self.volume_var.get(), VOLUME_STEP, VOLUME_MIN, VOLUME_MAX)
+        self.volume_var.set(value)
+        self._show_volume()
+        self.settings.set("volume", value)
 
     def _clear_placeholder(self, _event: object = None) -> None:
         """Supprime le texte d'exemple au premier contact de l'utilisateur."""
@@ -171,13 +265,28 @@ class SouffleurApp(ttk.Frame):
 
     # ------------------------------------------------------- préférences --
 
-    def _restore_voice(self) -> None:
-        """Rétablit la dernière voix utilisée (ou la voix par défaut)."""
+    def _restore_preferences(self) -> None:
+        """Rétablit voix, vitesse et volume de la session précédente."""
         key = self.settings.get("voice", DEFAULT_VOICE)
         if key not in VOICES_BY_KEY:
             key = DEFAULT_VOICE
         self.voice_var.set(VOICES_BY_KEY[key].label)
         self._refresh_voice_state()
+
+        self.speed_var.set(self._stored_number("speed", DEFAULT_SPEED, SPEED_MIN, SPEED_MAX))
+        self.volume_var.set(
+            self._stored_number("volume", DEFAULT_VOLUME, VOLUME_MIN, VOLUME_MAX)
+        )
+        self._show_speed()
+        self._show_volume()
+
+    def _stored_number(self, key: str, default: float, low: float, high: float) -> float:
+        """Lit un réglage numérique en se méfiant d'un fichier édité à la main."""
+        try:
+            value = float(self.settings.get(key, default))
+        except (TypeError, ValueError):
+            return default
+        return min(max(value, low), high)
 
     def current_voice_key(self) -> str:
         label = self.voice_var.get()
@@ -292,6 +401,9 @@ class SouffleurApp(ttk.Frame):
 
     def _start_play(self, text: str, key: str) -> None:
         segments = split_text(text)
+        # Réglages lus ici, sur le thread Tkinter : le worker ne touche à aucun
+        # widget. Ils valent donc pour toute la lecture, d'où des curseurs gelés.
+        speed, volume = self.speed_var.get(), self.volume_var.get()
         self.player.reset()  # réarmé ici, avant tout risque de clic « Arrêter »
         self._set_busy(True, stop_enabled=True)
         self.progress.configure(mode="indeterminate")
@@ -305,6 +417,8 @@ class SouffleurApp(ttk.Frame):
                     text,
                     stop_event=self.player.stop_event,
                     on_segment=self._on_segment_progress,
+                    speed=speed,
+                    volume=volume,
                 )
                 # prefetch : la synthèse du segment suivant tourne pendant la
                 # lecture du segment courant, d'où un enchaînement sans blanc.
@@ -344,12 +458,13 @@ class SouffleurApp(ttk.Frame):
         path = filedialog.asksaveasfilename(
             title="Exporter en WAV",
             defaultextension=".wav",
-            initialfile="piper.wav",
+            initialfile="souffleur.wav",
             filetypes=[("Fichier WAV", "*.wav")],
         )
         if not path:
             return
 
+        speed, volume = self.speed_var.get(), self.volume_var.get()
         self.player.reset()  # même drapeau : « Arrêter » annule aussi l'export
         self._set_busy(True, stop_enabled=True)
         self.progress.configure(mode="determinate", maximum=100, value=0)
@@ -363,6 +478,8 @@ class SouffleurApp(ttk.Frame):
                         text,
                         stop_event=self.player.stop_event,
                         on_segment=self._on_segment_progress,
+                        speed=speed,
+                        volume=volume,
                     )
                 )
                 if self.player.stopped or samples.size == 0:
@@ -417,6 +534,10 @@ class SouffleurApp(ttk.Frame):
         self.play_button.configure(state=normal_state)
         self.export_button.configure(state=normal_state)
         self.voice_combo.configure(state="disabled" if busy else "readonly")
+        # Curseurs gelés pendant le travail : la vitesse et le volume sont figés
+        # dans l'audio au moment de la synthèse, les bouger ne changerait rien.
+        self.speed_scale.configure(state=normal_state)
+        self.volume_scale.configure(state=normal_state)
         self.stop_button.configure(state="normal" if (busy and stop_enabled) else "disabled")
 
     def _on_error(self, message: str) -> None:
@@ -425,6 +546,11 @@ class SouffleurApp(ttk.Frame):
         self.progress.configure(mode="determinate", value=0)
         self._set_status("Erreur.")
         messagebox.showerror(APP_TITLE, message)
+
+
+def _snap(value: float, step: float, low: float, high: float) -> float:
+    """Arrondit au pas le plus proche, dans les bornes (et sans bruit flottant)."""
+    return round(round(min(max(value, low), high) / step) * step, 4)
 
 
 def main() -> int:

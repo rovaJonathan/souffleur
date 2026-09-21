@@ -22,11 +22,13 @@ Sous Linux, `sounddevice` a besoin de PortAudio : `sudo apt install libportaudio
 1. Choisir une voix dans le menu déroulant (le pastille indique si le modèle est
    déjà installé). Le choix est mémorisé pour les sessions suivantes.
 2. Coller ou taper le texte.
-3. **▶ Lire** — synthétise et joue directement sur la sortie audio.
+3. Régler **Vitesse** (0,5× à 2×) et **Volume** (0 à 100 %) si besoin. Les deux
+   sont mémorisés et valent aussi bien pour la lecture que pour l'export.
+4. **▶ Lire** — synthétise et joue directement sur la sortie audio.
    Si le modèle manque, l'application propose de le télécharger (barre de
    progression), puis enchaîne toute seule sur la lecture.
-4. **■ Arrêter** — coupe la lecture *et* la génération en cours (< 100 ms).
-5. **⬇ Exporter en WAV** — écrit tout le texte dans un fichier mono 16 bits.
+5. **■ Arrêter** — coupe la lecture *et* la génération en cours (< 100 ms).
+6. **⬇ Exporter en WAV** — écrit tout le texte dans un fichier mono 16 bits.
 
 Raccourcis : `Ctrl+Entrée` pour lire, `Échap` pour arrêter.
 
@@ -67,6 +69,13 @@ produit. Le fichier `MODEL_CARD` de chaque voix, sur Hugging Face, fait foi.
 - **Pas de blanc entre segments** : `prefetch()` génère le segment suivant dans
   un thread pendant que le courant est joué, via une file bornée (mémoire
   constante).
+- **Vitesse et volume** : appliqués à la synthèse (`SynthesisConfig` de Piper)
+  et non à la sortie audio, donc identiques à l'écoute et dans le WAV exporté.
+  La vitesse est relative à la cadence propre du modèle
+  (`length_scale = défaut du modèle / vitesse`) ; le volume plafonne à 100 %,
+  Piper normalisant déjà l'audio avant d'appliquer le facteur — au-delà il ne
+  resterait que de l'écrêtage. Les curseurs sont gelés pendant le travail : le
+  réglage est figé dans l'audio au moment où il est généré.
 - **Arrêt instantané** : un seul `threading.Event` coupe à la fois la
   génération et la lecture. Le flux PortAudio n'est manipulé que par le thread
   de lecture (un `abort()` concurrent d'un `write()` bloquant peut figer le
