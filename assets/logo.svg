@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logo de Souffleur.
+
+  Une boîte de souffleur (la demi-coquille qui cache le souffleur au bord de
+  scène), d'où s'échappent trois ondes vocales, sur un fond « rideau ».
+  Formes simples et contrastées pour rester lisible en 16 × 16.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="curtain" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8f1d2c"/>
+      <stop offset="1" stop-color="#5a1020"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6d78a"/>
+      <stop offset="1" stop-color="#d9a441"/>
+    </linearGradient>
+    <linearGradient id="stage" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a0b16"/>
+      <stop offset="1" stop-color="#26060e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fond : carré arrondi, façon icône de bureau -->
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#curtain)"/>
+
+  <!-- Plis du rideau, très discrets -->
+  <g fill="#ffffff" fill-opacity="0.045">
+    <rect x="72" y="0" width="28" height="512"/>
+    <rect x="164" y="0" width="28" height="512"/>
+    <rect x="320" y="0" width="28" height="512"/>
+    <rect x="412" y="0" width="28" height="512"/>
+  </g>
+
+  <!-- Plancher de scène -->
+  <path d="M0 372 H512 V400 A112 112 0 0 1 400 512 H112 A112 112 0 0 1 0 400 Z" fill="url(#stage)"/>
+  <rect x="0" y="366" width="512" height="10" fill="#f6d78a" fill-opacity="0.35"/>
+
+  <!-- Boîte du souffleur : demi-coquille posée sur le plancher -->
+  <path d="M136 372 A120 120 0 0 1 376 372 Z" fill="url(#shell)"/>
+  <!-- Ombre intérieure : l'ouverture côté scène -->
+  <path d="M176 372 A80 80 0 0 1 336 372 Z" fill="#26060e"/>
+  <!-- Reflet -->
+  <path d="M158 336 A104 104 0 0 1 240 258" fill="none" stroke="#fff4cf" stroke-opacity="0.55" stroke-width="14" stroke-linecap="round"/>
+
+  <!-- Ondes vocales qui montent de la boîte -->
+  <g fill="none" stroke="#f6d78a" stroke-linecap="round" stroke-width="30">
+    <path d="M196 204 A86 86 0 0 1 316 204"/>
+    <path d="M160 146 A138 138 0 0 1 352 146" stroke-opacity="0.72"/>
+    <path d="M124 92 A190 190 0 0 1 388 92" stroke-opacity="0.44"/>
+  </g>
+</svg>

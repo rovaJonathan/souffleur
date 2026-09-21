@@ -1,5 +1,7 @@
 # Souffleur
 
+<img src="assets/logo.svg" width="96" alt="Logo de Souffleur" align="right">
+
 Comme au théâtre : il lit votre texte à voix haute, et rien ne sort de la salle.
 
 Petite application de bureau (Tkinter) pour faire parler du texte **en local**,
@@ -75,6 +77,8 @@ produit. Le fichier `MODEL_CARD` de chaque voix, sur Hugging Face, fait foi.
 | `tts_engine.py` | catalogue de voix, téléchargement des modèles, découpage du texte, synthèse Piper |
 | `audio_player.py` | sortie audio en streaming (sounddevice) + file de préchargement |
 | `settings.py` | chemins applicatifs et préférences persistées (JSON) |
+| `assets/` | logo (`logo.svg`, source) et icônes dérivées (PNG, `.ico`, `.icns`) affichées par la fenêtre |
+| `build_icons.py` | régénère les icônes depuis le SVG (nécessite `rsvg-convert`) |
 
 ### Points de conception
 
