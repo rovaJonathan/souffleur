@@ -17,7 +17,7 @@ import urllib.request
 import wave
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Iterator, List, Optional, Tuple
+from typing import Callable, Iterable, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
 from piper import PiperVoice, SynthesisConfig
@@ -307,6 +307,10 @@ DEFAULT_VOLUME = 1.0
 puis écrête à ±1 : monter au-dessus de 1 ne ferait que saturer."""
 
 
+SpeedSource = Union[float, Callable[[], float]]
+"""Vitesse fixe, ou fonction relue avant chaque segment (réglage « live »)."""
+
+
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
@@ -362,7 +366,7 @@ class PiperEngine:
         segments: List[Segment],
         stop_event: Optional[threading.Event] = None,
         on_segment: Optional[SegmentCallback] = None,
-        speed: float = DEFAULT_SPEED,
+        speed: SpeedSource = DEFAULT_SPEED,
         volume: float = DEFAULT_VOLUME,
     ) -> Iterator[Tuple[int, AudioChunkTuple]]:
         """Génère l'audio des segments en streaming, chaque chunk étant
@@ -376,11 +380,18 @@ class PiperEngine:
         chaque segment. `stop_event` est vérifié entre chaque chunk : l'arrêt
         est quasi immédiat.
 
+        `speed` peut être une fonction sans argument : elle est alors relue
+        avant chaque segment, ce qui permet de changer la vitesse en cours de
+        lecture. Le segment déjà en synthèse garde son ancienne cadence.
+
         La voix est chargée ici (et non par l'appelant) : c'est un générateur,
         donc le chargement — une seconde environ — a lieu dans le thread qui
         consomme, jamais dans celui de l'interface.
         """
-        syn_config = synthesis_config(self.load(key), speed, volume)
+        voice = self.load(key)
+        read_speed = speed if callable(speed) else (lambda: speed)
+        current_speed: Optional[float] = None
+        syn_config: Optional[SynthesisConfig] = None
         total = len(segments)
         sample_rate: Optional[int] = None
 
@@ -389,6 +400,11 @@ class PiperEngine:
                 return
             if on_segment is not None:
                 on_segment(index, total, segment)
+
+            wanted_speed = float(read_speed())
+            if syn_config is None or wanted_speed != current_speed:
+                current_speed = wanted_speed
+                syn_config = synthesis_config(voice, wanted_speed, volume)
 
             # Silence de liaison entre deux segments (pas avant le premier).
             if index > 0 and sample_rate:
@@ -406,7 +422,7 @@ class PiperEngine:
         text: str,
         stop_event: Optional[threading.Event] = None,
         on_segment: Optional[SegmentCallback] = None,
-        speed: float = DEFAULT_SPEED,
+        speed: SpeedSource = DEFAULT_SPEED,
         volume: float = DEFAULT_VOLUME,
     ) -> Iterator[AudioChunkTuple]:
         """Génère l'audio de tout le texte, segment par segment, en streaming.
