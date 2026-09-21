@@ -13,5 +13,8 @@ voices/
 *.onnx.json
 *.wav
 
+# Bundle macOS généré (chemins de cette machine)
+dist/
+
 # Système
 .DS_Store

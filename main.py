@@ -809,9 +809,19 @@ def apply_app_icon(root: tk.Tk) -> None:
                 pass
 
 
+def _macos_front(root: tk.Tk) -> None:
+    """Passe la fenêtre au premier plan au lancement depuis un .app."""
+    if sys.platform != "darwin":
+        return
+    root.lift()
+    root.attributes("-topmost", True)
+    root.after(200, lambda: root.attributes("-topmost", False))
+
+
 def main() -> int:
     root = tk.Tk()
     apply_app_icon(root)
+    _macos_front(root)
     try:
         SouffleurApp(root)
     except Exception as exc:  # erreur de démarrage : on prévient proprement

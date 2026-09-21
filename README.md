@@ -17,6 +17,15 @@ pip install -r requirements.txt
 python main.py
 ```
 
+Sous macOS, pour une icône dans le Dock et Launchpad :
+
+```bash
+python build_macos_app.py
+```
+
+Cela installe `~/Applications/Souffleur.app`, qui lance le `.venv` de ce dépôt.
+Relancer le script si le dépôt ou le venv change de place.
+
 Sous Linux, `sounddevice` a besoin de PortAudio : `sudo apt install libportaudio2`.
 
 Optionnel : avec `ffmpeg` dans le `PATH` (`brew install ffmpeg`, `apt install
@@ -79,6 +88,7 @@ produit. Le fichier `MODEL_CARD` de chaque voix, sur Hugging Face, fait foi.
 | `settings.py` | chemins applicatifs et préférences persistées (JSON) |
 | `assets/` | logo (`logo.svg`, source) et icônes dérivées (PNG, `.ico`, `.icns`) affichées par la fenêtre |
 | `build_icons.py` | régénère les icônes depuis le SVG (nécessite `rsvg-convert`) |
+| `build_macos_app.py` | installe `Souffleur.app` dans `~/Applications` (macOS) |
 
 ### Points de conception
 
