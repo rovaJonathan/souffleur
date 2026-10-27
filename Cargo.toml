@@ -1,0 +1,24 @@
+[package]
+name = "souffleur"
+version = "0.1.0"
+edition = "2024"
+description = "Synthèse vocale 100 % locale (Piper), interface egui"
+license = "MIT"
+publish = false
+
+[workspace]
+members = ["xtask"]
+
+[dependencies]
+anyhow = "1.0.104"
+eframe = "0.35.0"
+hound = "3.5.1"
+# Figé : ONNX Runtime 1.31 (ort rc.14+) plante sur les modèles Piper
+# (segfault dès quelques dizaines de phonèmes, macOS arm64). rc.13 = ORT 1.28.
+ort = "=2.0.0-rc.13"
+regex = "1.13.1"
+rfd = "0.17.2"
+rodio = { version = "0.23.0", default-features = false, features = ["playback"] }
+serde_json = "1.0.154"
+unicode-normalization = "0.1.26"
+ureq = "3.5.0"

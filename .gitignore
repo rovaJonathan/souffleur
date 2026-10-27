@@ -1,11 +1,10 @@
-# Environnement virtuel
+# Rust
+target/
+
+# Restes de l'ancienne version Python (supprimée), s'ils traînent encore
 .venv/
 venv/
-
-# Python
 __pycache__/
-*.py[cod]
-*.egg-info/
 
 # Modèles de voix et audio générés (téléchargés à la demande)
 voices/
@@ -13,7 +12,7 @@ voices/
 *.onnx.json
 *.wav
 
-# Bundle macOS généré (chemins de cette machine)
+# Bundle macOS généré (cargo xtask macos-app)
 dist/
 
 # Système

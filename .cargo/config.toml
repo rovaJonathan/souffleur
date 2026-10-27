@@ -1,0 +1,3 @@
+[alias]
+# Outils de développement : `cargo xtask icons`, `cargo xtask macos-app`.
+xtask = "run --quiet --package xtask --"

@@ -1,5 +1,9 @@
 # Plan d'améliorations — Souffleur
 
+> Historique : ces points ont été réalisés sur la version Python, puis portés
+> tels quels lors de la réécriture en Rust (branche `feat/rust`). Les noms de
+> fichiers `.py` cités ci-dessous correspondent désormais aux modules de `src/`.
+
 État des lieux (2026-09-21, M2 Pro, `fr_FR-siwis-medium`) : perf excellente,
 rien à corriger. Chargement voix 0,67 s, premier chunk 72 ms, facteur temps
 réel 0,028. Ce plan liste des améliorations fonctionnelles, à traiter une par
