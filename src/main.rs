@@ -82,7 +82,8 @@ enum UiMessage {
     DownloadProgress(f32, String),
     DownloadDone {
         key: &'static str,
-        then: Action,
+        /// Action à relancer une fois la voix prête (aucune si téléchargement manuel).
+        then: Option<Action>,
     },
     /// Segment en cours : `verb` vaut « Lecture » ou « Génération ».
     Segment {
@@ -272,6 +273,13 @@ impl SouffleurApp {
                             "modèle à télécharger"
                         });
                         voice_state_dot(ui, self.voice_installed);
+                        if !self.voice_installed
+                            && ui
+                                .add_enabled(idle, egui::Button::new("Télécharger"))
+                                .clicked()
+                        {
+                            self.start_download(self.voice_key, None);
+                        }
                     });
                 });
                 ui.add_space(8.0);
@@ -644,7 +652,7 @@ impl SouffleurApp {
                 .show();
             if proceed == MessageDialogResult::Yes {
                 // On relance la même action une fois le modèle disponible.
-                self.start_download(key, action);
+                self.start_download(key, Some(action));
             }
             return;
         }
@@ -657,7 +665,7 @@ impl SouffleurApp {
 
     // ---------------------------------------------------- téléchargement --
 
-    fn start_download(&mut self, key: &'static str, then: Action) {
+    fn start_download(&mut self, key: &'static str, then: Option<Action>) {
         self.set_busy(Some(Busy::default()));
         self.progress = 0.0;
         self.status = format!("Téléchargement de {key}…");
@@ -676,12 +684,14 @@ impl SouffleurApp {
         });
     }
 
-    fn on_download_done(&mut self, key: &str, then: Action) {
+    fn on_download_done(&mut self, key: &str, then: Option<Action>) {
         self.set_busy(None);
         self.progress = 0.0;
         self.refresh_voice_state();
         self.status = format!("Voix {key} installée.");
-        self.run_action(then);
+        if let Some(action) = then {
+            self.run_action(action);
+        }
     }
 
     // --------------------------------------------------------- lecture ----
